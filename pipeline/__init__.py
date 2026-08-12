@@ -1,0 +1,1 @@
+"""Aviation NLP pipeline: fetch -> preprocess -> train -> RAG explainer."""

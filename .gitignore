@@ -1,3 +1,19 @@
-venv/
+# Python
 __pycache__/
-*.csv
+*.py[cod]
+.venv/
+venv/
+
+# Runtime data
+logs/
+*.log
+
+# Tooling
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Generated artifacts (download/train outputs)
+data/*.csv
+data/*.pkl
