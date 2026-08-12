@@ -17,8 +17,10 @@ from pipeline.preprocess import preprocess_text
 
 def explain_incident(new_report_text, dataset=DEFAULT_DATASET,
                      model_path=DEFAULT_MODEL, vectorizer_path=DEFAULT_VECTORIZER,
-                     top_k=3, log=print) -> dict:
+                     top_k=3, log=print, on_progress=None) -> dict:
     """Explain a raw incident report. Returns a structured result dict."""
+    if on_progress:
+        on_progress("LOADING ARTIFACTS", 15)
     df = pd.read_csv(dataset)
     model = joblib.load(model_path)
     vectorizer = joblib.load(vectorizer_path)
@@ -28,10 +30,14 @@ def explain_incident(new_report_text, dataset=DEFAULT_DATASET,
 
     predicted_risk = model.predict(new_vector)[0]
 
+    if on_progress:
+        on_progress("EMBEDDING 2000 REPORTS", 60)
     log("[rag] Embedding historical reports and matching by cosine similarity ...")
     historical_vectors = vectorizer.transform(df["Narrative"].apply(preprocess_text))
     similarities = cosine_similarity(new_vector, historical_vectors).flatten()
     top_indices = similarities.argsort()[-top_k:][::-1]
+    if on_progress:
+        on_progress("RANKING EVIDENCE", 100)
 
     matches = []
     for rank, idx in enumerate(top_indices, 1):

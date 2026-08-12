@@ -27,7 +27,7 @@ def _detect_column(df: pd.DataFrame, keywords, fallback_name):
 
 def fetch_and_clean(target=DEFAULT_DATASET, hf_dataset=DEFAULT_HF_DATASET,
                     nrows=NROWS_LIMIT, top_categories=TOP_CATEGORIES,
-                    log=print) -> dict:
+                    log=print, on_progress=None) -> dict:
     """Download (or reuse) the ASRS dataset and save a cleaned CSV.
 
     Returns a dict describing what happened:
@@ -37,11 +37,17 @@ def fetch_and_clean(target=DEFAULT_DATASET, hf_dataset=DEFAULT_HF_DATASET,
         df = pd.read_csv(target)
         log(f"[fetch] Dataset already on disk: {target.name} "
             f"({len(df)} rows). Skipping download.")
+        if on_progress:
+            on_progress("ALREADY ON DISK", 100)
         return {"status": "existing", "rows": len(df), "path": target, "df": df}
 
+    if on_progress:
+        on_progress("CONNECTING TO HUGGING FACE", 10)
     log(f"[fetch] Downloading '{hf_dataset}' from Hugging Face ...")
     dataset = load_dataset(hf_dataset)
     df = pd.DataFrame(dataset["train"])
+    if on_progress:
+        on_progress("DOWNLOADING ASRS REPORTS", 50)
 
     narrative_col = _detect_column(df, NARRATIVE_KEYWORDS, "narrative")
     label_col = _detect_column(df, LABEL_KEYWORDS, "label")
@@ -67,6 +73,8 @@ def fetch_and_clean(target=DEFAULT_DATASET, hf_dataset=DEFAULT_HF_DATASET,
     df = df.dropna().head(nrows)
     target.parent.mkdir(exist_ok=True)
     df.to_csv(target, index=False)
+    if on_progress:
+        on_progress("SAVING CLEANED CSV", 100)
     log(f"[fetch] Saved {len(df)} cleaned ASRS reports -> {target}")
     return {"status": "downloaded", "rows": len(df), "path": target, "df": df}
 

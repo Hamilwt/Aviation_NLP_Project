@@ -1,64 +1,84 @@
-# Aviation NLP Pipeline — Terminal UI
+# Aviation NLP Pipeline — Terminal UI (menu-driven)
 
-A fully terminal-driven demonstration of an aviation-safety NLP pipeline:
+A fully terminal-driven demonstration of an aviation-safety NLP pipeline,
+built as an interactive TUI (Textual). Every step runs **visually inside
+the terminal** with live progress bars — no browser.
 
-1. **Fetch** — download the public NASA ASRS dataset from Hugging Face
-   (no token needed) and clean it: multi-label anomaly strings are reduced
-   to their primary category and rare categories are bucketed as `Other`.
-2. **Preprocess** — domain preprocessing engine: lowercase + noise removal.
-3. **Train** — TF-IDF (bigrams) → Logistic Regression, saved as pickles.
-4. **RAG explainer** — classify any new incident report and retrieve the
-   top-3 most similar historical reports as evidence (in-context prompting).
+```
+  1 · Fetch / Refresh dataset        4 · RAG explainer
+  2 · View datasets                 5 · NLP data assistant
+  3 · Train model                   6 · Pipeline log
+                                     7 · Exit
+```
 
-Everything runs **inside the terminal** — no browser. If a step's artifact
-already exists (`data/*.csv`, `data/*.pkl`) the TUI displays it instead of
-re-running the expensive operation. Any CSV dropped into `data/` is
-immediately selectable in the Dataset tab.
+Press a number to select an option (or `m` to re-open the menu at any
+time). Option 7 quits.
 
-## Run
+## Install & run
 
 ```bash
 pip install -r requirements.txt
-python app.py                # full TUI
-python app.py --fetch        # headless: download/reuse dataset
-python app.py --train        # headless: train model
-python app.py --explain "misheard altitude restriction, descended below cleared altitude"
+python app.py
 ```
 
-## TUI usage
+Headless CLI (scripting / CI): `python app.py --fetch`, `--train`,
+`--explain <incident text>`.
 
-| Key | Action |
-|-----|--------|
-| `f` | Fetch dataset |
-| `t` | Train model |
-| `e` | Explain report in the RAG tab |
-| `Tab` | Move between widgets |
-| `q` / `Ctrl+C` | Quit |
+## What each option does
 
-Tabs: `1 · Dataset` (live table preview + class distribution), `2 · Train
-Model` (classification report), `3 · RAG Explainer` (type a report, get the
-predicted category + evidence spans), `4 · Pipeline Log` (every step's
-console output). The top bar shows the pipeline stage statuses
-(`FETCH / TRAIN / EXPLAIN` → `[OK]` when artifacts exist).
+1. **Fetch dataset** — downloads the public NASA ASRS dataset from Hugging
+   Face (no token). If the dataset already exists in `data/`, it is **not
+   re-downloaded**: the terminal shows the cached result instantly. Live
+   progress: `[███░░░░] DOWNLOADING ASRS REPORTS ...`.
+2. **View datasets** — lists every CSV in `data/` and opens the selected
+   one: raw narrative preview table + anomaly-category distribution. Any
+   dataset file you add later appears here automatically.
+3. **Train model** — runs the full NLP training chain with visible stages:
+   domain preprocessing → TF-IDF vectorization → train/test split →
+   Logistic Regression fitting → evaluation, then displays the complete
+   classification report (accuracy, per-category precision/recall).
+4. **RAG explainer** — paste a new incident report; the system predicts its
+   risk category and retrieves the top-3 most similar historical reports
+   as evidence, with similarity bars (`█…` + %).
+5. **NLP data assistant** — keyless analyst working on the loaded dataset.
+   Quick buttons: Summary, Quality/issues, Safety/critical, Classes; or
+   type free-form questions:
+   - `quality` / `issues` — what is right and wrong in the data (missing
+     values, duplicate narratives, very short reports, class imbalance,
+     'Other' bucket coverage)
+   - `safety` / `critical` — safety-criticality breakdown and the most
+     frequent critical categories (CFIT, NMAC, loss of control, ...)
+   - `classes` — class distribution
+   - `analyze <text>` — scans a narrative for high-risk phrases (TCAS RA,
+     terrain, wake vortex, fatigue, fire/smoke, ...)
+6. **Pipeline log** — full console output of every step, live.
+7. **Exit** — close the TUI.
+
+## Why scikit-learn?
+
+The training step (option 3) uses scikit-learn's `TfidfVectorizer`,
+`LogisticRegression`, `train_test_split` and `classification_report`; the
+RAG step (option 4) uses its `cosine_similarity` for the semantic
+evidence retrieval. That is why `scikit-learn` is in `requirements.txt`.
 
 ## Project structure
 
 ```
-app.py                 TUI entry point (Textual) + headless CLI
+app.py               TUI entry point (Textual) + headless CLI
 pipeline/
-  paths.py             data/ layout, artifact discovery, defaults
-  fetch_data.py        step 1: download/clean ASRS dataset
-  preprocess.py        shared domain preprocessing
-  train_model.py       step 2: TF-IDF + LogisticRegression training
-  rag_explainer.py     step 3: classify + semantic evidence retrieval
-data/                  artifacts (generated, git-ignored)
-requirements.txt       textual, pandas, scikit-learn, datasets, joblib
+  paths.py           data/ layout, artifact discovery, defaults
+  fetch_data.py      step 1: download/clean ASRS dataset
+  preprocess.py      shared domain preprocessing
+  train_model.py     step 2: TF-IDF + LogisticRegression training
+  rag_explainer.py   step 3: classify + semantic evidence retrieval
+  analyst.py         NLP data assistant (quality & safety analysis)
+data/                artifacts (generated; git-ignored)
+requirements.txt     textual · pandas · scikit-learn · datasets · joblib
 ```
 
-## Testing the pipeline headlessly (no UI)
+## Data & artifacts
 
-```bash
-python -c "from pipeline.fetch_data import fetch_and_clean; print(fetch_and_clean()['status'])"
-python -c "from pipeline.train_model import train_classifier; print(train_classifier()['accuracy'])"
-python -c "from pipeline.rag_explainer import explain_incident; print(explain_incident('gear down early on finals')['predicted_label'])"
-```
+- Datasets: `data/*.csv` — the Dataset tab (option 2) lists every one.
+- Models: `data/*.pkl` (model + vectorizer) — produced by option 3.
+- Both folders are git-ignored; `data/real_asrs_dataset.csv` is the default
+  ASRS dataset (2000 cleaned reports, 16 anomaly categories).

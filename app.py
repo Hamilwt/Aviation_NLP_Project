@@ -1,30 +1,41 @@
-"""Aviation NLP Pipeline — Terminal UI.
-
-Demonstrates the full NLP workflow visually inside the terminal:
-
-  Fetch ASRS dataset  ->  view it  ->  train model  ->  RAG explainer
-
-If an artifact already exists (dataset / model / vectorizer) the TUI shows
-its contents instead of re-running the expensive step. Every CSV placed in
-the ``data/`` folder is immediately selectable in the Dataset tab.
+"""Aviation NLP Pipeline — Terminal UI (menu-driven).
 
 Run:  python app.py
+
+Numbered menu (always available, re-open with 'm'):
+
+  1 · Fetch / Refresh dataset     4 · RAG explainer       7 · Exit
+  2 · View datasets               5 · NLP data assistant
+  3 · Train model                 6 · Pipeline log
+
+Every operation renders *visually* in the terminal: a stage label plus a
+live progress bar (`[███░░░░] DOWNLOADING ASRS REPORTS ...`) while the
+work runs in the background. Existing artifacts (any file in data/) are
+displayed instead of being regenerated.
+
+The NLP data assistant (option 5) inspects the loaded dataset without any
+LLM: it reports data-quality issues, class balance and the
+safety-criticality of anomaly categories, and it scans any pasted report
+narrative for high-risk phrases (TCAS RA, terrain, wake vortex, ...).
+
 CLI:  python app.py --fetch | --train | --explain <text>
 """
 import sys
 from pathlib import Path
 
+import pandas as pd
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.widgets import (Button, DataTable, Footer, Header, RichLog,
-                             Select, Static, TabbedContent, TabPane, TextArea)
-from textual import work
-from textual.worker import Worker, WorkerState
+from textual.containers import Horizontal
+from textual.screen import Screen
+from textual.widgets import (Button, DataTable, Footer, Header, Input,
+                             ProgressBar, RichLog, Select, Static,
+                             TabbedContent, TabPane, TextArea)
+from textual.worker import WorkerState
 
-from pipeline import fetch_data, train_model
-from pipeline.paths import (DATA_DIR, DEFAULT_DATASET, DEFAULT_MODEL,
-                            DEFAULT_VECTORIZER, find_datasets)
+from pipeline import analyst, fetch_data, train_model
+from pipeline.paths import DEFAULT_DATASET, find_datasets
 from pipeline.rag_explainer import explain_incident
 
 SAMPLE_REPORT = ("I was cleared for the ILS approach but misheard the altitude "
@@ -33,12 +44,26 @@ SAMPLE_REPORT = ("I was cleared for the ILS approach but misheard the altitude "
                  "and issued a climb instruction to avoid terrain. Checklist was "
                  "complete.")
 
+MENU_TEXT = """
+[bold cyan]   AVIATION NLP PIPELINE  —  ASRS  · TF-IDF  · Logistic Regression  · RAG[/]
+
+   [bold]1[/] · Fetch / Refresh dataset         [bold]4[/] · RAG explainer
+   [bold]2[/] · View datasets                  [bold]5[/] · NLP data assistant
+   [bold]3[/] · Train model                    [bold]6[/] · Pipeline log
+                                              [bold]7[/] · Exit
+
+[dim]   Press a number, or 'Esc' to go straight to the console.[/]
+"""
+
 CSS = """
 Screen { layout: vertical; }
 #pipeline_bar { height: 1; padding: 0 1; color: $text-muted; }
 #pipeline_bar .done { color: $success; text-style: bold; }
 #pipeline_bar .skip { color: $text-muted; }
 #pipeline_bar .busy { color: $warning; text-style: bold; }
+#progress_row { height: 1; padding: 0 1; }
+#stage_label { width: 36; color: $accent; text-style: bold; }
+#progress { width: 1fr; }
 TabbedContent { height: 1fr; }
 
 #dataset_hint { padding: 1 2; color: $text-muted; }
@@ -49,7 +74,6 @@ TabbedContent { height: 1fr; }
 #report_text { height: 1fr; padding: 1 2; border: round $accent; }
 #report_text .accent { color: $accent; text-style: bold; }
 #report_text .good { color: $success; text-style: bold; }
-#report_text .warn { color: $warning; }
 
 #rag_input { height: 6; border: round $accent; padding: 1; }
 #rag_result { height: 1fr; padding: 1 2; border: round $accent; }
@@ -57,36 +81,80 @@ TabbedContent { height: 1fr; }
 #rag_result .warn { color: $warning; }
 #rag_result .muted { color: $text-muted; }
 
+#assistant_chips { height: auto; }
+#assistant_log { height: 1fr; }
+#assistant_input { height: 3; border: round $accent; }
+
 #log_view { height: 1fr; }
 Button { margin: 1 2; }
 Horizontal { height: auto; }
+
+#menu_screen { align: center middle; }
+#menu_box { width: 78; height: auto; border: round $accent; padding: 1 2; }
+#menu_box #menu_hint { width: 100%; text-align: center; padding-top: 1; }
 """
 
 
+# --------------------------------------------------------------------------
+# Menu screen (option-based navigation)
+# --------------------------------------------------------------------------
+class MenuScreen(Screen):
+    BINDINGS = [
+        Binding("1", "menu(1)", "1 · Fetch", show=False),
+        Binding("2", "menu(2)", "2 · View data", show=False),
+        Binding("3", "menu(3)", "3 · Train", show=False),
+        Binding("4", "menu(4)", "4 · RAG", show=False),
+        Binding("5", "menu(5)", "5 · Assistant", show=False),
+        Binding("6", "menu(6)", "6 · Log", show=False),
+        Binding("7", "menu(7)", "7 · Exit", show=False),
+        Binding("escape", "close", "Console", show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="menu_box"):
+            yield Static(MENU_TEXT, id="menu_text")
+
+    def action_menu(self, number: str) -> None:
+        self.app.dispatch_menu_option(int(number))
+
+    def action_close(self) -> None:
+        self.app.pop_screen()
+
+
+# --------------------------------------------------------------------------
+# Main application
+# --------------------------------------------------------------------------
 class PipelineTUI(App):
-    """Terminal UI that visually walks the Aviation NLP pipeline."""
+    """Terminal app: numbered options, visual progress, data assistant."""
 
     TITLE = "Aviation NLP Pipeline"
     SUB_TITLE = "ASRS dataset  ·  TF-IDF  ·  Logistic Regression  ·  RAG explainer"
     CSS = CSS
+    SCREENS = {"menu": MenuScreen}
 
     BINDINGS = [
-        Binding("f", "fetch", "Fetch dataset", show=True),
-        Binding("t", "train", "Train model", show=True),
-        Binding("e", "explain", "Explain report", show=True),
-        Binding("d", "datasets_tab", "Dataset", show=False),
+        Binding("m", "menu", "Menu", show=True),
+        Binding("1", "goto(1)", show=False),
+        Binding("2", "goto(2)", show=False),
+        Binding("3", "goto(3)", show=False),
+        Binding("4", "goto(4)", show=False),
+        Binding("5", "goto(5)", show=False),
+        Binding("6", "goto(6)", show=False),
         Binding("q", "quit", "Quit", show=True),
     ]
 
     def __init__(self):
         super().__init__()
         self.active_csv = DEFAULT_DATASET
-        self.current_report_text = SAMPLE_REPORT
+        self.df: pd.DataFrame | None = None
 
-    # ------------------------------------------------------------------ UI
+    # ---------------------------------------------------------------- UI
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("", id="pipeline_bar")
+        with Horizontal(id="progress_row"):
+            yield Static("", id="stage_label")
+            yield ProgressBar(id="progress", total=100, show_eta=False)
         with TabbedContent():
             with TabPane("1 · Dataset", id="tab_dataset"):
                 yield Static(
@@ -123,41 +191,196 @@ class PipelineTUI(App):
                 yield Static("", id="rag_result")
             with TabPane("4 · Pipeline Log", id="tab_log"):
                 yield RichLog(id="log_view", markup=True, wrap=False)
+            with TabPane("5 · NLP Data Assistant", id="tab_assistant"):
+                yield Static(
+                    "Keyless analyst working on the loaded dataset. Ask about "
+                    "quality, safety, classes — or paste a narrative.",
+                    id="dataset_hint",
+                )
+                with Horizontal(id="assistant_chips"):
+                    yield Button("Summary", id="chip_summary")
+                    yield Button("Quality / issues", id="chip_quality")
+                    yield Button("Safety / critical", id="chip_safety")
+                    yield Button("Classes", id="chip_classes")
+                yield RichLog(id="assistant_log", markup=True, wrap=False)
+                yield Input(placeholder="Ask the data assistant ...",
+                            id="assistant_input")
         yield Footer()
 
     def on_mount(self) -> None:
-        log = self.query_one("#log_view", RichLog)
-        log.write("[cyan]Pipeline console ready.[/]")
-        self.datasets_tab()
-        self.refresh_bar()
+        self.query_one("#log_view", RichLog).write("[cyan]Pipeline console ready.[/]")
+        self._load_dataframe()
+        self.show_pipeline_status()
+        self.refresh_preview()
+        self.push_screen("menu")
 
-    # ----------------------------------------------------- pipeline status
-    def refresh_bar(self) -> None:
-        """Render the visual pipeline stage strip (fetch -> train -> rag)."""
-        csv_exists = DEFAULT_DATASET.exists()
-        model_ready = DEFAULT_MODEL.exists() and DEFAULT_VECTORIZER.exists()
+    # ------------------------------------------------------- data helpers
+    def _load_dataframe(self) -> None:
+        if Path(self.active_csv).exists():
+            try:
+                self.df = pd.read_csv(self.active_csv)
+            except Exception as exc:
+                self.df = None
+                self._log(f"[red]Could not read dataset: {exc}[/]")
+        else:
+            self.df = None
+
+    def loaded_df(self) -> pd.DataFrame | None:
+        if self.df is None:
+            self._log("[yellow]No dataset loaded — fetch one first (option 1).[/]")
+        return self.df
+
+    def show_pipeline_status(self) -> None:
+        csv_ok = Path(self.active_csv).exists()
+        model_ok = Path(self.active_csv.parent / "asrs_model.pkl").exists()
         parts = []
-        for name, ready, done in [
-            ("1 FETCH", csv_exists, False),
-            ("2 TRAIN", model_ready, False),
-            ("3 EXPLAIN", model_ready, False),
-        ]:
-            cls = "done" if ready else "skip"
-            parts.append(f"[{cls}]{'[OK]' if ready else '[--]'} {name}[/]")
-        self.query_one("#pipeline_bar", Static).update("  " + "   ".join(parts))
+        for name, ok in [("1 FETCH", csv_ok), ("2 TRAIN", model_ok),
+                         ("3 EXPLAIN", model_ok)]:
+            cls = "done" if ok else "skip"
+            parts.append(f"[{cls}]{'[OK]' if ok else '[--]'} {name}[/]")
+        self.query_one("#pipeline_bar", Static).update(
+            "  " + "   ".join(parts) + "      Press [cyan]m[/] for the menu")
 
+    # -------------------------------------------------------------- menu
+    def dispatch_menu_option(self, number: int) -> None:
+        actions = {1: "fetch", 2: "datasets", 3: "train", 4: "rag",
+                   5: "assistant", 6: "log"}
+        action = actions.get(number)
+        if action is None:  # 7 = exit
+            self.exit()
+            return
+        self.goto_target(action)
+        try:
+            self.pop_screen()
+        except Exception:
+            pass
+
+    def action_menu(self) -> None:
+        if not any(isinstance(s, MenuScreen) for s in self.screen_stack):
+            self.push_screen("menu")
+
+    def goto_target(self, destination: str) -> None:
+        actions = {
+            "fetch": lambda: (self.tab("tab_dataset"), self.perform_fetch()),
+            "datasets": lambda: (self.tab("tab_dataset"),
+                                 self.refresh_preview()),
+            "train": lambda: (self.tab("tab_train"), self.perform_train()),
+            "rag": lambda: (self.tab("tab_rag"), self.perform_explain()),
+            "assistant": lambda: self.tab("tab_assistant"),
+            "log": lambda: self.tab("tab_log"),
+        }
+        actions[destination]()
+
+    def action_goto(self, destination: int) -> None:
+        names = {1: "fetch", 2: "datasets", 3: "train", 4: "rag",
+                 5: "assistant", 6: "log"}
+        self.goto_target(names.get(int(destination), "datasets"))
+
+    def tab(self, name: str):
+        tabs = self.query_one(TabbedContent)
+        try:
+            tabs.active = name
+        except Exception:
+            pass
+        return self
+
+    # ------------------------------------------------------- progress bar
+    def _set_progress(self, label: str, pct: int) -> None:
+        self.query_one("#stage_label", Static).update(label)
+        self.query_one("#progress", ProgressBar).update(progress=pct, total=100)
+
+    def _log(self, text: str) -> None:
+        self.call_from_thread(
+            lambda: self.query_one("#log_view", RichLog).write(text))
+
+    # ------------------------------------------------------------- workers
+    def perform_fetch(self) -> None:
+        self.run_worker(lambda: fetch_data.fetch_and_clean(
+            target=Path(self.active_csv),
+            log=lambda m: self._log(m),
+            on_progress=lambda l, p: self.call_from_thread(self._set_progress, l, p),
+        ), name="fetch", thread=True, exclusive=True)
+
+    def perform_train(self) -> None:
+        if self.loaded_df() is None:
+            return
+        self.run_worker(lambda: train_model.train_classifier(
+            dataset=Path(self.active_csv),
+            log=lambda m: self._log(m),
+            on_progress=lambda l, p: self.call_from_thread(self._set_progress, l, p),
+        ), name="train", thread=True, exclusive=True)
+
+    def perform_explain(self) -> None:
+        if self.loaded_df() is None or not (Path(self.active_csv.parent
+                                                 / "asrs_model.pkl")).exists():
+            self._log("[yellow]Model not trained yet — run option 3 first.[/]")
+            return
+        text = self.query_one("#rag_input", TextArea).text
+        self.run_worker(lambda: explain_incident(
+            text, dataset=Path(self.active_csv),
+            log=lambda m: self._log(m),
+            on_progress=lambda l, p: self.call_from_thread(self._set_progress, l, p),
+        ), name="explain", thread=True, exclusive=True)
+
+    def on_worker_state_changed(self, event) -> None:
+        worker_name = getattr(event.worker, "name", "unknown")
+        if event.state == WorkerState.RUNNING:
+            bar = self.query_one("#pipeline_bar", Static)
+            bar.update(f"  [busy]{'●' if hasattr(event.worker, 'name') else ''} "
+                       f"RUNNING: {worker_name.upper()} ...[/]")
+        elif event.state == WorkerState.SUCCESS:
+            result = event.worker.result
+            if worker_name == "fetch":
+                self._load_dataframe()
+                self.show_pipeline_status()
+                self.refresh_preview()
+            elif worker_name == "train":
+                self.show_train_report(result)
+                self.show_pipeline_status()
+            elif worker_name == "explain":
+                self.show_explain_result(result)
+            self._set_progress("DONE", 100)
+            self.show_pipeline_status()
+        elif event.state == WorkerState.ERROR:
+            self._log(f"[red]Error: {event.worker.error}[/]")
+            self.show_pipeline_status()
+
+    # ------------------------------------------------------------ results
+    def show_train_report(self, result: dict) -> None:
+        report = (
+            f"[b]Model trained[/] — accuracy [accent]{result['accuracy']:.1%}[/]"
+            f" over [accent]{result['classes']}[/] anomaly categories\n\n"
+            + result["report"]
+        )
+        self.query_one("#report_text", Static).update(report)
+
+    def show_explain_result(self, result: dict) -> None:
+        lines = [
+            f"[b]PREDICTED RISK CATEGORY:[/] {result['predicted_label']}",
+            "",
+            "RAG evidence — most similar historical reports:",
+        ]
+        for m in result["matches"]:
+            pct = m["similarity"] * 100
+            bar = "█" * int(pct // 5) + "░" * (20 - int(pct // 5))
+            lines.append(f"#{m['rank']}  {bar} {pct:5.1f}%  [warn]{m['label']}[/]")
+            narrative = m["narrative"][:170]
+            lines.append(
+                f"    [muted]{narrative}{'…' if len(m['narrative']) > 170 else ''}[/]"
+            )
+        self.query_one("#rag_result", Static).update("\n".join(lines))
+
+    # ------------------------------------------------------------ dataset
     def refresh_preview(self) -> None:
-        """Display the selected dataset's contents + label distribution."""
         table = self.query_one("#preview_table", DataTable)
         dist = self.query_one("#distribution_table", DataTable)
         table.clear(columns=True)
         dist.clear(columns=True)
-        if not self.active_csv or not Path(self.active_csv).exists():
+        if not Path(self.active_csv).exists():
             table.add_columns("No dataset found")
-            table.add_row("Run 'Fetch / Refresh' to download the ASRS dataset.")
+            table.add_row("Run 'Fetch / Refresh' (option 1) to download the "
+                          "ASRS dataset.")
             return
-        import pandas as pd
-
         df = pd.read_csv(self.active_csv)
         table.add_columns("Narrative (truncated)", "Anomaly / Event")
         for _, row in df.head(30).iterrows():
@@ -169,132 +392,50 @@ class PipelineTUI(App):
         for label, count in df["human_factors_groundtruth"].value_counts().items():
             dist.add_row(str(label), str(count), f"{count / total:5.1%}")
 
-    # -------------------------------------------------------------- workers
-    def _log(self, text: str, markup: bool = True) -> None:
-        self.call_from_thread(self.query_one, "#log_view", RichLog
-                              ).write(text)
+    # ---------------------------------------------------------- assistant
+    def assistant_ask(self, query: str) -> None:
+        log = self.query_one("#assistant_log", RichLog)
+        df = self.loaded_df()
+        if not query.strip():
+            return
+        log.write(f"[cyan]You:[/] {query.strip()}")
+        if df is None:
+            log.write("[red]Assistant:[/] No dataset loaded — fetch one first.")
+            return
+        for line in analyst.answer(query, df):
+            log.write(line if line else " ")
+        log.write("")
 
-    @work(thread=True, name="fetch", exclusive=True)
-    def run_fetch(self) -> dict:
-        return fetch_data.fetch_and_clean(
-            target=Path(self.active_csv),
-            log=lambda m: self._log(m),
-        )
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "assistant_input":
+            self.assistant_ask(event.value)
+            self.query_one("#assistant_input", Input).value = ""
 
-    @work(thread=True, name="train", exclusive=True)
-    def run_train(self) -> dict:
-        return train_model.train_classifier(
-            dataset=Path(self.active_csv),
-            log=lambda m: self._log(m),
-        )
-
-    @work(thread=True, name="explain", exclusive=True)
-    def run_explain(self, text: str) -> dict:
-        return explain_incident(
-            text,
-            dataset=Path(self.active_csv),
-            log=lambda m: self._log(m),
-        )
-
-    def _busy(self, on: bool, worker_name: str) -> None:
-        bar = self.query_one("#pipeline_bar", Static)
-        if on:
-            bar.update(f"  [busy]WORKING: {worker_name} ...[/]")
-        else:
-            self.refresh_bar()
-
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.state == WorkerState.RUNNING:
-            self._busy(True, event.worker.name)
-        elif event.state in (WorkerState.SUCCESS, WorkerState.ERROR):
-            self._busy(False, event.worker.name)
-            if event.worker.name == "fetch" and event.state == WorkerState.SUCCESS:
-                self.refresh_preview()
-            elif event.worker.name == "train" and event.state == WorkerState.SUCCESS:
-                self.show_train_report(event.worker.result)
-                self.refresh_bar()
-            elif event.worker.name == "explain" and event.state == WorkerState.SUCCESS:
-                self.show_explain_result(event.worker.result)
-            elif event.state == WorkerState.ERROR:
-                self._log(f"[red]Error: {event.worker.error}[/]")
-
-    # ------------------------------------------------------------- results
-    def show_train_report(self, result: dict) -> None:
-        report = (
-            f"[good]Model trained[/] — accuracy [accent]{result['accuracy']:.1%}[/]"
-            f" over [accent]{result['classes']}[/] anomaly categories\n\n"
-            + result["report"]
-        )
-        self.query_one("#report_text", Static).update(report)
-
-    def show_explain_result(self, result: dict) -> None:
-        lines = [
-            f"[category]PREDICTED RISK CATEGORY: {result['predicted_label']}[/]",
-            "",
-            "[warn]RAG evidence — most similar historical reports:[/]",
-        ]
-        for m in result["matches"]:
-            pct = m["similarity"] * 100
-            bar = "█" * int(pct // 5) + "░" * (20 - int(pct // 5))
-            lines.append(
-                f"#{m['rank']}  {bar} {pct:5.1f}%  [warn]{m['label']}[/]"
-            )
-            narrative = m["narrative"][:170]
-            lines.append(f"    [muted]{narrative}{'…' if len(m['narrative']) > 170 else ''}[/]")
-            lines.append("")
-        self.query_one("#rag_result", Static).update("\n".join(lines))
-
-    # --------------------------------------------------------------- events
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_fetch":
-            self.run_fetch()
-        elif event.button.id == "btn_train":
-            self.run_train()
-        elif event.button.id == "btn_explain":
-            text = self.query_one("#rag_input", TextArea).text
-            self.run_explain(text)
-        elif event.button.id == "btn_view":
+        bid = event.button.id
+        if bid == "btn_fetch":
+            self.perform_fetch()
+        elif bid == "btn_train":
+            self.perform_train()
+        elif bid == "btn_explain":
+            self.perform_explain()
+        elif bid == "btn_view":
             self.refresh_preview()
+        elif bid == "chip_summary":
+            self.assistant_ask("summary")
+        elif bid == "chip_quality":
+            self.assistant_ask("quality")
+        elif bid == "chip_safety":
+            self.assistant_ask("safety")
+        elif bid == "chip_classes":
+            self.assistant_ask("classes")
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id == "dataset_select" and event.value:
-            selected = str(event.value)
-            if selected:
-                self.active_csv = Path(selected)
-                self.refresh_bar()
-
-    # ------------------------------------------------------------- actions
-    def action_fetch(self) -> None:
-        self.get_tab("tab_dataset")
-        self.run_fetch()
-
-    def action_train(self) -> None:
-        self.get_tab("tab_train")
-        self.run_train()
-
-    def action_explain(self) -> None:
-        self.get_tab("tab_rag")
-        text = self.query_one("#rag_input", TextArea).text
-        self.run_explain(text)
-
-    def action_datasets_tab(self) -> None:
-        self.datasets_tab()
-
-    def datasets_tab(self) -> None:
-        tabs = self.query_one(TabbedContent)
-        try:
-            tabs.active = "tab_dataset"
-        except Exception:
-            pass
-        self.refresh_preview()
-
-    def get_tab(self, name: str):
-        tabs = self.query_one(TabbedContent)
-        try:
-            tabs.active = name
-        except Exception:
-            pass
-        return self
+            self.active_csv = Path(str(event.value))
+            self._load_dataframe()
+            self.show_pipeline_status()
+            self.refresh_preview()
 
 
 # --------------------------------------------------------------------- CLI
@@ -302,12 +443,15 @@ def run_cli() -> int:
     """Headless mode: python app.py --fetch / --train / --explain <text>"""
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     args = sys.argv[1:]
+    ran = False
     if "--fetch" in args:
         res = fetch_data.fetch_and_clean()
         print(f"status={res['status']} rows={res['rows']}")
+        ran = True
     if "--train" in args:
         res = train_model.train_classifier()
         print(res["report"])
+        ran = True
     if "--explain" in args:
         i = args.index("--explain")
         text = " ".join(args[i + 1:]) or SAMPLE_REPORT
@@ -315,7 +459,8 @@ def run_cli() -> int:
         print(f"PREDICTED: {res['predicted_label']}")
         for m in res["matches"]:
             print(f"  #{m['rank']} {m['similarity']:.1%} {m['label']}")
-    if not any(a in args for a in ("--fetch", "--train", "--explain")):
+        ran = True
+    if not ran:
         print(__doc__)
         return 1
     return 0
