@@ -1,6 +1,9 @@
+import sys
 import pandas as pd
 import joblib
 import re
+
+sys.stdout.reconfigure(encoding='utf-8')
 from sklearn.metrics.pairwise import cosine_similarity
 
 def preprocess_text(text):

@@ -1,5 +1,8 @@
+import sys
 import pandas as pd
 from datasets import load_dataset
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 def fetch_and_clean_data():
     print("Fetching open NASA ASRS dataset from Hugging Face...")
@@ -19,6 +22,17 @@ def fetch_and_clean_data():
             label_col: 'human_factors_groundtruth'
         })
         
+        # Reduce multi-label anomaly strings to their primary category
+        # (e.g. "ATC Issue; Conflict Airborne Conflict" -> "ATC Issue All Types")
+        df['human_factors_groundtruth'] = df['human_factors_groundtruth'].str.split(';').str[0].str.strip()
+
+        # Keep the 15 most frequent categories and bucket the rest as 'Other'
+        # so the classifier has a tractable label space with enough samples per class
+        top_categories = df['human_factors_groundtruth'].value_counts().nlargest(15).index
+        df['human_factors_groundtruth'] = df['human_factors_groundtruth'].where(
+            df['human_factors_groundtruth'].isin(top_categories), 'Other'
+        )
+
         # Drop blanks and limit to 2000 rows to ensure fast training tonight
         df = df.dropna()
         df = df.head(2000)
