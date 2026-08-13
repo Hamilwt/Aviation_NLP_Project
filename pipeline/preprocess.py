@@ -14,6 +14,7 @@ def _ensure_nltk_data():
         word_tokenize("test")
     except LookupError:
         nltk.download('punkt')
+        nltk.download('punkt_tab')
     try:
         WordNetLemmatizer().lemmatize("test")
     except LookupError:

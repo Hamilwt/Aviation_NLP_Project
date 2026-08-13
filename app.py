@@ -9,14 +9,19 @@ Numbered menu (always available, re-open with 'm'):
   3 · Train model                 6 · Pipeline log
 
 Every operation renders *visually* in the terminal: a stage label plus a
-live progress bar (`[███░░░░] DOWNLOADING ASRS REPORTS ...`) while the
-work runs in the background. Existing artifacts (any file in data/) are
-displayed instead of being regenerated.
+live progress bar (`[███░░░░] STREAMING ASRS REPORTS ...`) driven by REAL
+work — actual rows downloaded, documents NLTK-preprocessed, minibatches
+fitted, embeddings matched. No fake staged animation.
+
+The fetch step LIVE-DOWNLOADS real domain safety data every run:
+  * NASA ASRS aviation incident reports (Hugging Face datasets-server)
+  * NERC power-grid event analysis reports (public PDFs)
+cleaned and merged into one Domain-tagged dataset.
 
 The NLP data assistant (option 5) inspects the loaded dataset without any
-LLM: it reports data-quality issues, class balance and the
-safety-criticality of anomaly categories, and it scans any pasted report
-narrative for high-risk phrases (TCAS RA, terrain, wake vortex, ...).
+LLM: it reports data-quality issues, class balance, the domain split and
+the safety-criticality of anomaly categories, and it scans any pasted
+report narrative for high-risk phrases.
 
 CLI:  python app.py --fetch | --train | --explain <text>
 """
@@ -35,7 +40,7 @@ from textual.widgets import (Button, DataTable, Footer, Header, Input,
 from textual.worker import WorkerState
 
 from pipeline import analyst, fetch_data, train_model
-from pipeline.paths import DEFAULT_DATASET, find_datasets
+from pipeline.paths import (DEFAULT_DATASET, DEFAULT_MODEL, find_datasets)
 from pipeline.rag_explainer import explain_incident
 
 SAMPLE_REPORT = ("I was cleared for the ILS approach but misheard the altitude "
@@ -45,7 +50,7 @@ SAMPLE_REPORT = ("I was cleared for the ILS approach but misheard the altitude "
                  "complete.")
 
 MENU_TEXT = """
-[bold cyan]   AVIATION NLP PIPELINE  —  ASRS  · TF-IDF  · Logistic Regression  · RAG[/]
+[bold cyan]   SAFETY NLP PIPELINE  —  ASRS Aviation  ·  NERC Power Grid  ·  TF-IDF  ·  RAG[/]
 
    [bold]1[/] · Fetch / Refresh dataset         [bold]4[/] · RAG explainer
    [bold]2[/] · View datasets                  [bold]5[/] · NLP data assistant
@@ -127,8 +132,9 @@ class MenuScreen(Screen):
 class PipelineTUI(App):
     """Terminal app: numbered options, visual progress, data assistant."""
 
-    TITLE = "Aviation NLP Pipeline"
-    SUB_TITLE = "ASRS dataset  ·  TF-IDF  ·  Logistic Regression  ·  RAG explainer"
+    TITLE = "Safety NLP Pipeline"
+    SUB_TITLE = ("ASRS Aviation · NERC Power Grid · TF-IDF · SGD/Logistic "
+                 "Regression · RAG explainer")
     CSS = CSS
     SCREENS = {"menu": MenuScreen}
 
@@ -158,8 +164,9 @@ class PipelineTUI(App):
         with TabbedContent():
             with TabPane("1 · Dataset", id="tab_dataset"):
                 yield Static(
-                    "Fetch the NASA ASRS dataset. If it already exists on disk it "
-                    "is displayed below — nothing is re-downloaded.",
+                    "Live-downloads REAL safety data every run: NASA ASRS "
+                    "aviation incident reports + NERC power-grid event "
+                    "analysis reports, cleaned and merged by domain.",
                     id="dataset_hint",
                 )
                 with Horizontal():
@@ -232,7 +239,7 @@ class PipelineTUI(App):
 
     def show_pipeline_status(self) -> None:
         csv_ok = Path(self.active_csv).exists()
-        model_ok = Path(self.active_csv.parent / "asrs_model.pkl").exists()
+        model_ok = Path(DEFAULT_MODEL).exists()
         parts = []
         for name, ok in [("1 FETCH", csv_ok), ("2 TRAIN", model_ok),
                          ("3 EXPLAIN", model_ok)]:
@@ -311,8 +318,7 @@ class PipelineTUI(App):
         ), name="train", thread=True, exclusive=True)
 
     def perform_explain(self) -> None:
-        if self.loaded_df() is None or not (Path(self.active_csv.parent
-                                                 / "asrs_model.pkl")).exists():
+        if self.loaded_df() is None or not Path(DEFAULT_MODEL).exists():
             self._log("[yellow]Model not trained yet — run option 3 first.[/]")
             return
         text = self.query_one("#rag_input", TextArea).text
@@ -363,7 +369,9 @@ class PipelineTUI(App):
         for m in result["matches"]:
             pct = m["similarity"] * 100
             bar = "█" * int(pct // 5) + "░" * (20 - int(pct // 5))
-            lines.append(f"#{m['rank']}  {bar} {pct:5.1f}%  [warn]{m['label']}[/]")
+            domain = f" [muted]({m['domain']})[/]" if m.get("domain") else ""
+            lines.append(f"#{m['rank']}  {bar} {pct:5.1f}%  "
+                         f"[warn]{m['label']}[/]{domain}")
             narrative = m["narrative"][:170]
             lines.append(
                 f"    [muted]{narrative}{'…' if len(m['narrative']) > 170 else ''}[/]"
@@ -382,11 +390,15 @@ class PipelineTUI(App):
                           "ASRS dataset.")
             return
         df = pd.read_csv(self.active_csv)
-        table.add_columns("Narrative (truncated)", "Anomaly / Event")
+        has_domain = "Domain" in df.columns
+        table.add_columns("Narrative (truncated)", "Domain", "Anomaly / Event")
         for _, row in df.head(30).iterrows():
             narrative = str(row["Narrative"])
-            table.add_row(narrative[:100] + ("…" if len(narrative) > 100 else ""),
-                          str(row["human_factors_groundtruth"]))
+            table.add_row(
+                narrative[:100] + ("…" if len(narrative) > 100 else ""),
+                str(row["Domain"]) if has_domain else "",
+                str(row["human_factors_groundtruth"]),
+            )
         dist.add_columns("Anomaly category", "Count", "Share")
         total = len(df)
         for label, count in df["human_factors_groundtruth"].value_counts().items():

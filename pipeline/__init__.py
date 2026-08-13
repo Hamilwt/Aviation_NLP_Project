@@ -1,1 +1,1 @@
-"""Aviation NLP pipeline: fetch -> preprocess -> train -> RAG explainer."""
+"""Safety NLP pipeline: fetch (ASRS aviation + NERC power-grid) -> preprocess -> train -> RAG explainer."""

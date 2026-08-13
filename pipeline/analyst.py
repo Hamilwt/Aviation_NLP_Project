@@ -17,12 +17,17 @@ CRITICAL_KEYWORDS = [
     "cfit", "nmac", "loss of aircraft control", "wake vortex",
     "unstabilized approach", "smoke / fire", "engine", "fuel",
     "near midair", "midair", "terrain",
+    # power-grid system-level collapses / interruptions
+    "blackout", "outage", "disturbance", "system emergency",
 ]
 HIGH_KEYWORDS = [
     "altitude excursion", "altitude overshoot", "altitude undershoot",
     "runway", "incursion", "excursion", "bird / animal", "object",
     "weather / turbulence", "speed", "track / heading", "vfr in imc",
     "wind shear", "fod", "hard landing",
+    # power-grid weather/event driven events
+    "storm", "arctic", "snowstorm", "cold weather", "hurricane",
+    "solar pv", "oscillation", "load shed",
 ]
 # Risk phrases scanned inside raw narrative text.
 NARRATIVE_RISK_TERMS = {
@@ -54,10 +59,18 @@ def _risk_level(label: str) -> str:
 
 def safety_report(df: pd.DataFrame) -> list:
     """Share of each risk level + the most critical frequent categories."""
+    if "Domain" in df.columns:
+        dom = df["Domain"].value_counts()
+        lines = ["SAFETY-CRITICALITY BREAKDOWN (by anomaly category)"]
+        lines.append(
+            "  " + "  ".join(f"{k.upper()}: {v}" for k, v in dom.items())
+        )
+        lines.append("")
+    else:
+        lines = ["SAFETY-CRITICALITY BREAKDOWN (by anomaly category)"]
     levels = df["human_factors_groundtruth"].apply(_risk_level)
     total = len(df)
     counts = {lv: int((levels == lv).sum()) for lv in ("critical", "high", "medium")}
-    lines = ["SAFETY-CRITICALITY BREAKDOWN (by anomaly category)"]
     for lv, pct in [("critical", 5), ("high", 3), ("medium", 1)]:
         lines.append(f"  {lv.upper():<8} {counts[lv]:>5} reports  {counts[lv] / total:5.1%}")
     top_critical = (
