@@ -12,6 +12,8 @@ Optional flags:
     --no-fetch        skip the fetch step entirely (cached CSV required)
     --no-rag          skip the batch RAG explainability step
     --samples N       number of test reports to explain with RAG (default 100)
+    --monitor         start the real-time incident monitor after the pipeline
+    --poll N          monitor poll interval in seconds (default 60)
 """
 import argparse
 import logging
@@ -109,6 +111,12 @@ def parse_args() -> argparse.Namespace:
                         help="skip batch RAG explainability")
     parser.add_argument("--samples", type=int, default=config.RAG_N_SAMPLES,
                         help=f"RAG test samples (default {config.RAG_N_SAMPLES})")
+    parser.add_argument("--monitor", action="store_true",
+                        help="start the real-time incident monitor after the "
+                             "pipeline finishes")
+    parser.add_argument("--poll", type=int, default=config.MONITOR_POLL_SECONDS,
+                        help=f"monitor poll interval (default "
+                             f"{config.MONITOR_POLL_SECONDS}s)")
     return parser.parse_args()
 
 
@@ -118,7 +126,17 @@ def main() -> int:
     if args.samples <= 0:
         logger.error("--samples must be a positive integer.")
         return 1
-    return run_pipeline(args)
+    code = run_pipeline(args)
+    if code != 0:
+        return code
+    if args.monitor:
+        logger.info("Starting live incident monitor (Ctrl+C to stop) ...")
+        from src import monitor  # imported lazily: needs trained artifacts
+        try:
+            monitor.scan_and_alert(poll_seconds=args.poll)
+        except KeyboardInterrupt:
+            logger.info("Monitor stopped.")
+    return 0
 
 
 if __name__ == "__main__":

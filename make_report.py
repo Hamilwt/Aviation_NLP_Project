@@ -29,6 +29,7 @@ CODE_FILES = [
     "safety_nlp_pipeline/src/evaluator.py",
     "safety_nlp_pipeline/src/rag_explainer.py",
     "safety_nlp_pipeline/src/analyst.py",
+    "safety_nlp_pipeline/src/monitor.py",
     "safety_nlp_pipeline/src/report_generator.py",
     "safety_nlp_pipeline/requirements.txt",
     "safety_nlp_pipeline/.streamlit/config.toml",
@@ -130,7 +131,8 @@ def main():
     s = doc.add_paragraph()
     s.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = s.add_run("Production-grade headless pipeline — NASA ASRS · NERC power grid · "
-                  "TF-IDF · SGD · GridSearchCV · RAG · HTML report · Streamlit dashboard")
+                  "TF-IDF · SGD · GridSearchCV · RAG · HTML report · Streamlit dashboard · "
+                  "real-time monitoring & alerting")
     r.font.size = Pt(12)
     r.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
 
@@ -162,7 +164,9 @@ def main():
         "Live data collection: NASA ASRS reports (Hugging Face datasets-server) + 12 NERC event-analysis PDFs (pypdf + NLTK sentence tokenization), merged into one domain-tagged dataset.",
         "Rich HTML report: Jinja2 template with dataset statistics, data-quality audit, best hyperparameters, per-class metrics table, embedded confusion-matrix + class distribution plots, and RAG evidence examples with similarity bars.",
         "Batch RAG explainability: a sample of the test set is explained with the top-3 most similar historical reports per prediction - an auditable, explainable-by-example system.",
-        "Streamlit web dashboard (creamy light theme): Overview, Model Performance, RAG Explorer (live predictions + evidence) and Data Assistant tabs.",
+        "Streamlit web dashboard (creamy light theme): Overview, Model Performance, RAG Explorer (live predictions + evidence), Data Assistant and Live Alerts tabs.",
+        "Real-time incident monitoring & alerting (src/monitor.py): ingests new reports as they arrive, classifies on-the-fly, scores risk (critical/high/medium) and raises alerts with RAG evidence - from a watched folder, appended dataset rows, the live NTSB aviation feed and the UK Power Networks live-faults feed.",
+        "Alert de-duplication survives restarts (data/monitor_state.json), and the Live Alerts dashboard tab color-codes critical/high rows and shows RAG evidence per alert.",
         "Keyless data assistant (no LLM/API key): data-quality issues, class balance, domain split, safety-criticality breakdown and risk-phrase scanning with pandas.",
         "Logging: every step writes to the console and pipeline.log for full traceability.",
     ]:
@@ -186,7 +190,12 @@ def main():
         "        |                     narratives -> top-3 evidence spans)\n"
         "  [6/6] HTML REPORT (Jinja2 self-contained page -> reports/pipeline_report.html)\n"
         "        |\n"
-        "  [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)"
+        "  [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)\n"
+        "        |\n"
+        "  [MON] REAL-TIME MONITOR & ALERTER (src/monitor.py, python -m src.monitor)\n"
+        "        |   watches new_incidents/ + appended dataset rows + live NTSB / UKPN feeds\n"
+        "        |   -> classify on-the-fly -> risk score -> alert with RAG evidence\n"
+        "        `-> data/alerts.csv -> Streamlit 'Live Alerts' tab"
     )
     add_code_block(doc, arch)
 
@@ -200,7 +209,11 @@ def main():
         "python main.py                        # full pipeline, one command\n"
         "# open reports/pipeline_report.html in a browser\n\n"
         "streamlit run app_streamlit.py        # web dashboard (http://localhost:8501)\n\n"
-        "# optional flags:\n"
+        "# real-time monitoring & alerting:\n"
+        "python -m src.monitor                 # continuous monitor (needs trained model)\n"
+        "python -m src.monitor --once --no-api # single scan, no live feeds\n"
+        "python main.py --monitor --poll 30    # train, then start monitoring\n\n"
+        "# optional pipeline flags:\n"
         "python main.py --force-refresh        # re-download data\n"
         "python main.py --no-fetch             # use cached CSV only\n"
         "python main.py --no-rag               # skip RAG explainability\n"
@@ -239,8 +252,10 @@ def main():
         "    |   |-- evaluator.py       classification report, confusion matrix, plots\n"
         "    |   |-- rag_explainer.py   batch + single-query semantic retrieval (cosine)\n"
         "    |   |-- analyst.py         keyless data quality & safety analysis\n"
+        "    |   |-- monitor.py         real-time incident monitoring & alerting\n"
         "    |   `-- report_generator.py self-contained HTML report (Jinja2)\n"
-        "    |-- data/                  auto-created; CSV, models, plots, metrics\n"
+        "    |-- new_incidents/         drop-in folder for new CSV/TXT reports\n"
+        "    |-- data/                  auto-created; CSV, models, plots, metrics, alerts\n"
         "    `-- reports/               pipeline_report.html",
     )
 

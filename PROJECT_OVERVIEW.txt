@@ -19,6 +19,7 @@ TABLE OF CONTENTS
  13. Research gaps addressed
  14. Git history
  15. Extras
+ 16. Real-time monitoring & alerting (new)
 
 
 --------------------------------------------------------------------------------
@@ -48,6 +49,11 @@ It performs, end to end:
   5. Batch RAG explainability (semantic evidence retrieval for the test set)
   6. Self-contained HTML report generation (Jinja2)
   7. Interactive Streamlit dashboard for stakeholders
+  8. REAL-TIME INCIDENT MONITORING & ALERTING (src/monitor.py): a continuous
+     service that turns the batch pipeline into a proactive decision-support
+     system - it ingests new incident reports as they arrive, classifies them
+     on-the-fly, scores their risk level (critical / high / medium) and raises
+     alerts with RAG evidence from similar past incidents.
 
 
 --------------------------------------------------------------------------------
@@ -133,6 +139,11 @@ The 12 NERC reports (from config.py):
   [6/6] HTML REPORT (Jinja2 self-contained page -> reports/pipeline_report.html)
         |
   [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)
+        |
+  [MON] REAL-TIME MONITOR & ALERTER (src/monitor.py, python -m src.monitor)
+        |   watches new_incidents/ + appended dataset rows + live NTSB / UKPN feeds
+        |   -> classify on-the-fly -> risk score (critical/high/medium) ->
+        |      raise alert with RAG evidence -> data/alerts.csv -> dashboard tab
 
 STEP DETAILS
   1. DATA_FETCHER (src/data_fetcher.py)
@@ -187,6 +198,8 @@ STEP DETAILS
      - Keyless data assistant (quality / safety / classes / risk scanning).
      - See section 5.
 
+  8. MONITOR & ALERTER (src/monitor.py) - see section 16.
+
 
 --------------------------------------------------------------------------------
 5. WEB DASHBOARD (STREAMLIT)
@@ -203,6 +216,7 @@ loads the artifacts produced by `python main.py` and serves live predictions.
 | Model Performance    | metrics, per-class classification table, confusion-matrix & distribution plots |
 | RAG Explorer         | paste an incident -> predicted class + top-3 evidence with similarity bars |
 | Data Assistant       | keyless quality / safety / class insights and risk-phrase scanning |
+| Live Alerts          | alerts raised by the monitor: color-coded table (critical/high) + RAG evidence expanders |
 
 The theme lives in .streamlit/config.toml and custom CSS in the app.
 
@@ -230,6 +244,12 @@ The theme lives in .streamlit/config.toml and custom CSS in the app.
   python main.py --force-refresh    # re-download data
   python main.py --no-rag           # skip RAG explainability
   python main.py --samples N        # RAG test samples (default 100)
+  python main.py --monitor          # start the real-time monitor after training
+  python main.py --poll N           # monitor poll interval in seconds (default 60)
+
+  # monitor standalone:
+  python -m src.monitor             # continuous loop (watches + live feeds)
+  python -m src.monitor --once --no-api   # single scan (CI / demos)
 
 Each src module is also runnable directly (e.g. python src/data_fetcher.py).
 
@@ -243,6 +263,11 @@ Each src module is also runnable directly (e.g. python src/data_fetcher.py).
   RAG       : RAG_TOP_K=3, RAG_BATCH=200, RAG_N_SAMPLES=100,
               RAG_EVIDENCE_SNIPPET=170
   Report    : RAG_EXAMPLES_IN_REPORT=10, PLOT_CLASS_TOP_N=10
+  Monitor   : WATCH_DIR=new_incidents/, ALERT_LOG_PATH=data/alerts.csv,
+              MONITOR_POLL_SECONDS=60, MONITOR_ALERT_SNIPPET=200,
+              NTSB_API_URL + NTSB_POLL_SECONDS=3600,
+              UKPN_API_URL + UKPN_POLL_SECONDS=60,
+              ALERT_HIGH_MIN_CUSTOMERS=100
 
 
 --------------------------------------------------------------------------------
@@ -280,7 +305,10 @@ Each src module is also runnable directly (e.g. python src/data_fetcher.py).
   |   |-- evaluator.py          classification report, confusion matrix, plots
   |   |-- rag_explainer.py      batch + single-query semantic retrieval (cosine)
   |   |-- analyst.py            keyless data quality & safety analysis
+  |   |-- monitor.py            real-time incident monitoring & alerting (NEW)
   |   `-- report_generator.py   self-contained HTML report (Jinja2)
+  |-- new_incidents/            drop-in folder for new CSV/TXT reports (NEW)
+  |   `-- README.txt            format documentation
   |-- data/                     auto-created; CSV, models, plots, metrics
   |   |-- raw/                  cached NERC PDFs
   |   |-- real_safety_dataset.csv
@@ -289,6 +317,8 @@ Each src module is also runnable directly (e.g. python src/data_fetcher.py).
   |   |-- training_config.json
   |   |-- classification_report.txt / .csv
   |   |-- metrics.json
+  |   |-- alerts.csv            every raised alert (NEW, shown in dashboard)
+  |   |-- monitor_state.json    monitor de-dup state, survives restarts (NEW)
   |   `-- plots/                confusion_matrix.png, class_distribution.png
   `-- reports/                  generated HTML report
       `-- pipeline_report.html
@@ -307,8 +337,12 @@ developer tool and reads the same artifacts.
   streamlit run app_streamlit.py          # web dashboard
   # open http://localhost:8501
 
+  python -m src.monitor                   # real-time incident monitor (NEW)
+  # drop a CSV/TXT report into new_incidents/ -> alert in dashboard tab
+
 First run auto-downloads the NLTK corpora (stopwords, punkt, wordnet) and the
-live datasets; allow 2-5 minutes. Subsequent runs reuse the cache.
+live datasets; allow 2-5 minutes. Subsequent runs reuse the cache. The monitor
+requires a trained model - run `python main.py` at least once first.
 
 
 --------------------------------------------------------------------------------
@@ -368,6 +402,73 @@ live datasets; allow 2-5 minutes. Subsequent runs reuse the cache.
   - Research document : "AI Applications in Aerospace and Power Infrastructure
     Safety" (DOCX) with _research_extract.txt and _tables_extract.txt
     text/tables extracts — supporting research material for the project.
+
+
+--------------------------------------------------------------------------------
+16. REAL-TIME MONITORING & ALERTING (NEW - src/monitor.py)
+--------------------------------------------------------------------------------
+The batch pipeline only reacts when it is run. The monitor (a continuous
+service) makes it PROACTIVE: it ingests new incident reports as they arrive,
+classifies them on-the-fly with the trained model, scores their risk level and
+raises alerts with RAG evidence from similar past incidents - i.e. genuine
+NLP-based assistance at the moment something critical happens.
+
+INGESTION SOURCES (all run inside the loop, all fault-tolerant):
+  1. Drop-in folder  : any new_incidents/*.csv or *.txt file (hand-written
+                       CSVs with unquoted commas are parsed forgivingly).
+  2. Master dataset  : rows appended to data/real_safety_dataset.csv (the
+                       first scan only establishes a baseline, so history is
+                       not re-alerted).
+  3. NTSB API        : https://api.ai-analytics.org/api/v1/ntsb/aviation/recent
+                       - public-domain (CC0) US aviation accident feed with
+                       probable-cause narratives, refreshed daily.
+  4. UKPN Live Faults: ukpn-live-faults dataset on
+                       ukpowernetworks.opendatasoft.com (OpenDataSoft API) -
+                       near-real-time UK power-cut feed, polled **every minute**; only UNPLANNED cuts
+                       are raised, and those affecting >= 100 customers are
+                       escalated to "high" regardless of keyword hits.
+
+RISK ASSESSMENT (assess_risk):
+  critical -> raw-text trigger phrases (fire, smoke, loss of communication,
+              power outage / power cut, blackout, crash, emergency, terrain,
+              engine failure, ...) OR a critical label;
+  high     -> a high label OR high-risk vocabulary (altitude, runway, weather,
+              wind shear, engine, fuel, outage, ...);
+  medium   -> everything else.
+
+ALERT LIFECYCLE:
+  new report -> classify (explain_text) -> assess risk -> if critical/high:
+  build a result dict (timestamp, incident_id, source, narrative snippet,
+  predicted_label, risk_level, evidence list) -> append to data/alerts.csv
+  (evidence serialised as JSON) -> shown live in the Streamlit "Live Alerts"
+  tab with color-coded rows and per-alert RAG evidence expanders.
+
+RELIABILITY:
+  - Lazy, cached artifact loading (dataset + model + vectorizer + RAG index
+    built once per process).
+  - De-duplication state persisted to data/monitor_state.json, so a monitor
+    restart never re-alerts on already-processed incidents.
+  - One bad incident/file/feed never stops the loop (per-item try/except).
+  - Each live feed polls on its own cadence (NTSB hourly, UKPN every 5 min);
+    all logging goes to console + pipeline.log.
+
+RUN:
+  python main.py --monitor              # train, then start monitoring
+  python -m src.monitor                 # standalone monitor loop
+  python -m src.monitor --once --no-api # single scan, no live feeds
+
+EXAMPLE (assistance in action): a report "Lost communication with ATC due to
+severe static, unable to receive landing clearance." triggers a CRITICAL alert,
+and the RAG evidence retrieves the 3 most similar historical incidents with
+their outcomes - giving operators a head start based on past experience.
+
+FUTURE EXTENSIONS: Kafka/RabbitMQ subscriber instead of polling; email/SMS
+notifications (smtplib/Twilio); a recommendation engine over the evidence;
+incremental learning as new labeled incidents arrive.
+
+NOTE: The UKPN dataset you may see referenced elsewhere as `live-power-cuts`
+is **incorrect** (404). The real live feed is `ukpn-live-faults` — this is what
+the monitor polls every minute.
 
 ================================================================================
 END OF PROJECT OVERVIEW

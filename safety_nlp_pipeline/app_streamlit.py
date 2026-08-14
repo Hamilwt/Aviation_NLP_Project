@@ -5,8 +5,9 @@ Run from the pipeline root:
     streamlit run app_streamlit.py
 
 Loads the artifacts produced by ``python main.py`` (dataset, model, vectorizer)
-and serves them through a warm, creamy-light themed interface with four tabs:
-Overview, Model Performance, RAG Explorer and Data Assistant.
+and serves them through a warm, creamy-light themed interface with five tabs:
+Overview, Model Performance, RAG Explorer, Data Assistant and Live Alerts
+(raised by ``python -m src.monitor``).
 """
 import json
 from pathlib import Path
@@ -103,9 +104,10 @@ if artifacts is None:
 df, model, vectorizer, index_vectors = artifacts
 
 # --------------------------------------------------------------------- tabs
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [":bar_chart: Overview", ":chart_with_upwards_trend: Model Performance",
-     ":mag: RAG Explorer", ":clipboard: Data Assistant"])
+     ":mag: RAG Explorer", ":clipboard: Data Assistant",
+     ":rotating_light: Live Alerts"])
 
 # -------------------------------------------------------------- 1 · Overview
 with tab1:
@@ -240,3 +242,69 @@ with tab4:
         st.code("\n".join(analyst.answer(query, df)), language="text")
     else:
         st.info("Use the quick buttons above or type a question to get insights.")
+
+# ------------------------------------------------------ 5 · Live Alerts
+with tab5:
+    st.subheader("Live Alerts - real-time incident monitoring")
+    st.caption("Alerts are raised by `python -m src.monitor` as new reports arrive "
+               "from a watched folder, appended dataset rows, or the live NTSB / "
+               "UK Power Networks feeds.")
+
+    st.button("Refresh alerts", use_container_width=False)
+
+    def load_alerts():
+        if not config.ALERT_LOG_PATH.exists():
+            return None
+        alerts = pd.read_csv(config.ALERT_LOG_PATH)
+        if alerts.empty:
+            return alerts
+        alerts["timestamp"] = pd.to_datetime(alerts["timestamp"], errors="coerce")
+        return alerts.sort_values("timestamp", ascending=False)
+
+    alerts = load_alerts()
+
+    if alerts is None:
+        st.info("No alert log found. Start the monitor with **`python -m "
+                "src.monitor`**, then drop a CSV/TXT file into `new_incidents/` "
+                "to raise alerts.")
+    elif alerts.empty:
+        st.info("The alert log is empty - no alerts raised yet.")
+    else:
+        counts = alerts["risk_level"].value_counts()
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Critical", int(counts.get("critical", 0)))
+        m2.metric("High", int(counts.get("high", 0)))
+        m3.metric("Medium", int(counts.get("medium", 0)))
+        m4.metric("Total alerts", len(alerts))
+
+        recent = alerts.head(50).copy()
+        recent["evidence"] = recent["evidence_json"].apply(
+            lambda s: json.loads(s) if isinstance(s, str) and s.strip() else [])
+        recent = recent.drop(columns=["evidence_json"])
+
+        def _style_risk(row):
+            bg = {"critical": "#ffd6d6", "high": "#ffe9c7",
+                  "medium": "#ffffff"}.get(str(row["risk_level"]), "#ffffff")
+            return [f"background-color: {bg}"] * len(row)
+
+        st.write(f"**Recent alerts (most recent {len(recent)} shown)**")
+        st.dataframe(recent.style.apply(_style_risk, axis=1),
+                     use_container_width=True)
+
+        st.write("**RAG evidence for the most recent alerts**")
+        for _, row in recent.head(5).iterrows():
+            risk = str(row["risk_level"]).upper()
+            title = f"{risk} | {row['predicted_label']} | {row['incident_id']}"
+            with st.expander(f"{title} &nbsp;&middot;&nbsp; {row['timestamp']}"):
+                st.write(row["narrative"])
+                for ev in row["evidence"]:
+                    st.markdown(
+                        f"""
+                        <div class="ev-card">
+                          <div class="ev-title">#{ev['rank']} &nbsp;{ev['similarity'] * 100:.1f}% similar</div>
+                          <div class="ev-meta">{ev['label']} &middot; {ev['domain']}</div>
+                          {ev['snippet']}
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )

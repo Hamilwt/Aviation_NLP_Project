@@ -21,8 +21,9 @@ RAW_DIR = DATA_DIR / "raw"          # optional cached PDFs / raw downloads
 PLOTS_DIR = DATA_DIR / "plots"      # confusion matrix, class distribution, ...
 REPORTS_DIR = BASE_DIR / "reports"  # generated HTML report
 LOG_FILE = BASE_DIR / "pipeline.log"
+WATCH_DIR = BASE_DIR / "new_incidents"  # drop-in folder watched by the monitor
 
-for _d in (DATA_DIR, RAW_DIR, PLOTS_DIR, REPORTS_DIR):
+for _d in (DATA_DIR, RAW_DIR, PLOTS_DIR, REPORTS_DIR, WATCH_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # ------------------------------------------------------------ data sources
@@ -138,3 +139,26 @@ METRICS_JSON = DATA_DIR / "metrics.json"
 REPORT_PATH = REPORTS_DIR / "pipeline_report.html"
 RAG_EXAMPLES_IN_REPORT = 10  # RAG rows rendered in the HTML report
 PLOT_CLASS_TOP_N = 10        # classes shown in the distribution bar chart
+
+# ---------------------------------------------------------------- monitor
+# Real-time incident monitoring & alerting (src/monitor.py). The monitor turns
+# the batch pipeline into a proactive decision-support service: it ingests new
+# reports as they arrive, classifies them on-the-fly, scores their risk level
+# and raises alerts with RAG evidence from similar past incidents.
+WATCH_DIR = BASE_DIR / "new_incidents"       # drop CSV/TXT reports here
+ALERT_LOG_PATH = DATA_DIR / "alerts.csv"     # every raised alert is appended
+MONITOR_POLL_SECONDS = 60                    # main loop cadence
+MONITOR_ALERT_SNIPPET = 200                  # narrative length stored per alert
+
+# Live incident sources polled by the monitor (each on its own cadence).
+# NTSB: public-domain US accident/probable-cause feed, refreshed daily.
+NTSB_API_URL = "https://api.ai-analytics.org/api/v1/ntsb/aviation/recent"
+NTSB_POLL_SECONDS = 3600
+
+# UK Power Networks: near-real-time public power-cut (fault) feed.
+UKPN_API_URL = ("https://ukpowernetworks.opendatasoft.com/api/explore/v2.1/"
+                "catalog/datasets/ukpn-live-faults/records")
+UKPN_POLL_SECONDS = 60
+
+# Power cuts affecting at least this many customers are raised to "high" risk.
+ALERT_HIGH_MIN_CUSTOMERS = 100

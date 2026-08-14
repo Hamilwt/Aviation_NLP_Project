@@ -36,9 +36,46 @@ streamlit run app_streamlit.py      # opens http://localhost:8501
 | Model Performance    | metrics, per-class classification table, confusion-matrix & distribution plots |
 | RAG Explorer         | paste an incident -> predicted class + top-3 evidence with similarity bars |
 | Data Assistant       | keyless quality / safety / class insights and risk-phrase scanning |
+| Live Alerts          | alerts raised by the monitor: color-coded table + RAG evidence expanders |
 
 Run `python main.py` at least once before starting the dashboard so the
 artifacts exist. The theme can also be tuned in `.streamlit/config.toml`.
+
+## Real-time monitoring & alerting
+
+The batch pipeline only reacts when it is run. `src/monitor.py` is a continuous
+service that makes it **proactive**: it ingests new incident reports, classifies
+them on-the-fly, scores their risk level and raises alerts **with RAG evidence**
+from similar past incidents.
+
+```bash
+python main.py            # train once so the model exists
+python -m src.monitor     # start the monitor (continuous loop)
+```
+
+Ingestion sources (all fault-tolerant, all running inside the loop):
+
+| Source               | How incidents arrive                                          |
+|----------------------|---------------------------------------------------------------|
+| Drop-in folder       | drop a `new_incidents/*.csv` or `*.txt` report (forgiving parser) |
+| Master dataset       | rows appended to `data/real_safety_dataset.csv` (baseline on first scan) |
+| NTSB API (CC0)       | public US aviation accidents with probable-cause narratives, refreshed daily |
+| UKPN Live Faults     | near-real-time UK power cuts; unplanned only, >=100 customers escalates to high |
+
+Risk is scored **critical / high / medium** from trigger phrases (fire, loss of
+communication, power outage, crash, ...) combined with the model label. Alerts
+land in `data/alerts.csv` and appear in the dashboard's **Live Alerts** tab.
+De-duplication state is persisted to `data/monitor_state.json`, so a monitor
+restart never re-alerts on already-processed incidents.
+
+```bash
+python -m src.monitor --once --no-api   # single scan (CI / demos)
+python main.py --monitor --poll 30      # train, then start monitoring
+```
+
+Example assistance: a report *"Lost communication with ATC due to severe
+static..."* triggers a CRITICAL alert and the RAG evidence retrieves the 3 most
+similar historical incidents with their outcomes - a head start for operators.
 
 ## What the pipeline does
 
@@ -61,6 +98,8 @@ All console output is mirrored to `pipeline.log`.
 | `--no-fetch`      | Skip fetching (requires the cached CSV)                       |
 | `--no-rag`        | Skip the RAG explainability step                              |
 | `--samples N`     | Number of test reports to explain with RAG (default 100)      |
+| `--monitor`       | Start the real-time incident monitor after the pipeline       |
+| `--poll N`        | Monitor poll interval in seconds (default 60)                 |
 
 ## Fault tolerance & idempotency
 
@@ -99,13 +138,17 @@ safety_nlp_pipeline/
 │   ├── evaluator.py          classification report, confusion matrix, plots
 │   ├── rag_explainer.py      batch + single-query semantic retrieval (cosine)
 │   ├── analyst.py            keyless data quality & safety analysis
+│   ├── monitor.py            real-time incident monitoring & alerting
 │   └── report_generator.py   self-contained HTML report (Jinja2)
+├── new_incidents/            drop-in folder for new CSV/TXT reports
 ├── data/                     auto-created; CSV, models, plots
 │   ├── raw/                  cached PDFs
 │   ├── real_safety_dataset.csv
 │   ├── safety_model.pkl
 │   ├── tfidf_vectorizer.pkl
 │   ├── training_config.json
+│   ├── alerts.csv            every raised alert (Live Alerts tab)
+│   ├── monitor_state.json    monitor de-dup state (survives restarts)
 │   └── plots/                confusion matrix, class distribution, ...
 └── reports/                  generated HTML report
     └── pipeline_report.html
