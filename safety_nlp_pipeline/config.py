@@ -4,9 +4,16 @@ Every tunable parameter lives here so the pipeline can be re-run or scaled
 without touching module code. Directory creation is done at import time so
 downstream modules can rely on the folders existing.
 """
+import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# Register the pipeline root on sys.path so sibling modules (config,
+# preprocessor, src.*) resolve regardless of the process working directory
+# (e.g. when launched via `streamlit run`).
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 # ------------------------------------------------------------------- dirs
 DATA_DIR = BASE_DIR / "data"
@@ -121,6 +128,11 @@ DATASET_PATH = DATA_DIR / "real_safety_dataset.csv"
 MODEL_PATH = DATA_DIR / "safety_model.pkl"
 VECTORIZER_PATH = DATA_DIR / "tfidf_vectorizer.pkl"
 TRAIN_CONFIG_PATH = DATA_DIR / "training_config.json"
+
+# Persisted evaluation outputs (consumed by the Streamlit dashboard)
+CLASSIFICATION_REPORT_TXT = DATA_DIR / "classification_report.txt"
+CLASSIFICATION_REPORT_CSV = DATA_DIR / "classification_report.csv"
+METRICS_JSON = DATA_DIR / "metrics.json"
 
 # ---------------------------------------------------------------- report
 REPORT_PATH = REPORTS_DIR / "pipeline_report.html"

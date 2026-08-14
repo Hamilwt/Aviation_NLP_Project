@@ -52,7 +52,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
             logger.error("--no-fetch given but no cached dataset exists at %s",
                          config.DATASET_PATH)
             return 1
-        df = data_fetcher._load_cached()  # noqa: SLF001 - reuse normaliser
+        df = data_fetcher.load_dataset(config.DATASET_PATH)
         logger.info("Loaded cached dataset (%d rows).", len(df))
     else:
         df = data_fetcher.fetch_all(force_refresh=args.force_refresh)

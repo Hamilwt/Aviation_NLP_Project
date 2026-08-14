@@ -107,7 +107,7 @@ if __name__ == "__main__":
                         format="%(asctime)s | %(levelname)-8s | %(message)s")
     from config import DATASET_PATH
     data = pd.read_csv(DATASET_PATH)
-    from preprocessor import add_processed_column
+    from src.preprocessor import add_processed_column
     data = add_processed_column(data, "narrative")
     model, vec, Xtr, ytr, Xte, yte = train_and_save(data)
     print("trained OK")

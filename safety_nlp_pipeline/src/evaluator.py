@@ -4,6 +4,7 @@ Generates a per-class classification report, a confusion-matrix heatmap and a
 top-N class-distribution bar chart, saving the plots as PNGs under
 ``data/plots/`` for embedding in the HTML report.
 """
+import json
 import logging
 from pathlib import Path
 
@@ -15,7 +16,9 @@ import pandas as pd
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix
 
-from config import DOMAIN_COL, LABEL_COL, PLOT_CLASS_TOP_N, PLOTS_DIR
+from config import (CLASSIFICATION_REPORT_CSV, CLASSIFICATION_REPORT_TXT,
+                    DATA_DIR, DOMAIN_COL, LABEL_COL, METRICS_JSON,
+                    PLOT_CLASS_TOP_N, PLOTS_DIR)
 
 logger = logging.getLogger(__name__)
 
@@ -107,4 +110,15 @@ def evaluate_and_plot(model, vectorizer, X_test, y_test, df: pd.DataFrame | None
     }
     if df is not None:
         result["plots"]["class_distribution"] = plot_class_distribution(df)
+
+    # Persist evaluation outputs for the web dashboard.
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CLASSIFICATION_REPORT_TXT.write_text(report_text, encoding="utf-8")
+    report_df.to_csv(CLASSIFICATION_REPORT_CSV)
+    METRICS_JSON.write_text(json.dumps({
+        "accuracy": accuracy,
+        "n_classes": int(report_df.shape[0] - 3),  # minus avg/accuracy rows
+        "test_size": int(len(y_test)),
+    }, indent=2), encoding="utf-8")
+    logger.info("Persisted classification report + metrics to data/.")
     return result

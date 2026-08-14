@@ -227,6 +227,14 @@ def _merge_and_save(aviation: pd.DataFrame | None,
     return df
 
 
+def load_dataset(path=DATASET_PATH) -> pd.DataFrame:
+    """Public loader: read + normalise a dataset CSV (raises if missing)."""
+    df = _load_cached(path)
+    if df is None:
+        raise FileNotFoundError(f"Dataset not found: {path}")
+    return df
+
+
 def fetch_all(force_refresh: bool = False, nrows: int = NROWS_AVIATION) -> pd.DataFrame:
     """Download aviation + power-grid safety data, or load the cached CSV.
 

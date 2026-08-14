@@ -18,6 +18,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from config import (DOMAIN_COL, LABEL_COL, NARRATIVE_COL, PROCESSED_COL,
                     RAG_BATCH, RAG_EVIDENCE_SNIPPET, RAG_N_SAMPLES,
                     RAG_TOP_K, RANDOM_STATE)
+from src.preprocessor import preprocess_text
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,54 @@ def batch_rag(model, vectorizer, df: pd.DataFrame, X_train, X_test, y_test,
     return pd.DataFrame(rows)
 
 
+def build_index(df: pd.DataFrame, vectorizer) -> "scipy.sparse.csr_matrix":
+    """Preprocess + vectorize every narrative once, for fast repeated queries.
+
+    Used by the interactive dashboard so each RAG query only transforms the
+    query text instead of re-embedding the whole corpus.
+    """
+    logger.info("Building RAG retrieval index over %d narratives ...", len(df))
+    corpus = df[NARRATIVE_COL].apply(preprocess_text)
+    return vectorizer.transform(corpus)
+
+
+def explain_text(text: str, model, vectorizer, df: pd.DataFrame,
+                 index_vectors=None, top_k: int = RAG_TOP_K):
+    """Classify a single new report and return top-K evidence.
+
+    Args:
+        text: raw incident narrative.
+        model / vectorizer: trained artifacts.
+        df: dataset used as the evidence corpus (narrative/label/domain).
+        index_vectors: optional precomputed corpus matrix from ``build_index``;
+            computed on demand if None.
+        top_k: number of evidence spans to return.
+
+    Returns:
+        (predicted_label, evidence_list) where evidence_list contains dicts
+        with rank, similarity, label, domain, text.
+    """
+    processed = preprocess_text(text)
+    query_vec = vectorizer.transform([processed])
+    predicted = str(model.predict(query_vec)[0])
+
+    if index_vectors is None:
+        index_vectors = build_index(df, vectorizer)
+    n = index_vectors.shape[0]
+    sims = np.zeros(n)
+    for start in range(0, n, RAG_BATCH):
+        end = min(start + RAG_BATCH, n)
+        sims[start:end] = cosine_similarity(
+            query_vec, index_vectors[start:end]).flatten()
+
+    top = sims.argsort()[-top_k:][::-1]
+    evidence = [
+        _evidence_row(df, df.index, int(idx), sims[idx], rank)
+        for rank, idx in enumerate(top, 1)
+    ]
+    return predicted, evidence
+
+
 if __name__ == "__main__":
     import sys
     import joblib
@@ -106,7 +155,7 @@ if __name__ == "__main__":
     data = pd.read_csv(DATASET_PATH)
     m = joblib.load(MODEL_PATH)
     v = joblib.load(VECTORIZER_PATH)
-    from preprocessor import add_processed_column
+    from src.preprocessor import add_processed_column
     from trainer import train_and_save
     data = add_processed_column(data, "narrative")
     _, _, Xtr, ytr, Xte, yte = train_and_save(data)

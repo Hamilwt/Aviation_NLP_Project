@@ -21,6 +21,25 @@ python main.py            # fetch -> preprocess -> train -> evaluate -> RAG -> H
 
 Then open `reports/pipeline_report.html` in any browser.
 
+## Web dashboard (Streamlit)
+
+A warm, creamy-light themed interactive dashboard for stakeholders. It loads
+the artifacts produced by `main.py` and adds live RAG predictions.
+
+```bash
+streamlit run app_streamlit.py      # opens http://localhost:8501
+```
+
+| Tab                  | Content                                                        |
+|----------------------|----------------------------------------------------------------|
+| Overview             | dataset size, domain split, class-distribution chart, sample rows |
+| Model Performance    | metrics, per-class classification table, confusion-matrix & distribution plots |
+| RAG Explorer         | paste an incident -> predicted class + top-3 evidence with similarity bars |
+| Data Assistant       | keyless quality / safety / class insights and risk-phrase scanning |
+
+Run `python main.py` at least once before starting the dashboard so the
+artifacts exist. The theme can also be tuned in `.streamlit/config.toml`.
+
 ## What the pipeline does
 
 ```
@@ -72,12 +91,14 @@ safety_nlp_pipeline/
 ├── requirements.txt
 ├── config.py                 all parameters (paths, model settings, ...)
 ├── main.py                   single entry point - runs the full pipeline
+├── app_streamlit.py          Streamlit web dashboard (creamy light theme)
 ├── src/
 │   ├── data_fetcher.py       downloads ASRS (HF) + NERC (PDFs) -> CSV
 │   ├── preprocessor.py       NLTK tokenization, stopwords, lemmatization
 │   ├── trainer.py            TF-IDF + SGD classifier (log-loss) with GridSearchCV
 │   ├── evaluator.py          classification report, confusion matrix, plots
-│   ├── rag_explainer.py      batch semantic retrieval (cosine) for test reports
+│   ├── rag_explainer.py      batch + single-query semantic retrieval (cosine)
+│   ├── analyst.py            keyless data quality & safety analysis
 │   └── report_generator.py   self-contained HTML report (Jinja2)
 ├── data/                     auto-created; CSV, models, plots
 │   ├── raw/                  cached PDFs
