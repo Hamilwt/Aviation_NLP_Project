@@ -1,4 +1,10 @@
-"""Generate 'Aviation_NLP_Pipeline_Report.docx' — project summary + full implementation code."""
+"""Generate 'Aviation_NLP_Pipeline_Report.docx' - project summary + full implementation code.
+
+The report embeds the current PROJECT_OVERVIEW.txt, the latest run metrics
+(accuracy, CV F1, best hyperparameters) and the complete source of every file
+in the production-grade `safety_nlp_pipeline/` module.
+"""
+import json
 from pathlib import Path
 
 from docx import Document
@@ -9,16 +15,23 @@ from docx.shared import Inches, Pt, RGBColor
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "Aviation_NLP_Pipeline_Report.docx"
+PIPE = ROOT / "safety_nlp_pipeline"
+OVERVIEW = ROOT / "PROJECT_OVERVIEW.txt"
 
 CODE_FILES = [
-    "app.py",
-    "pipeline/paths.py",
-    "pipeline/preprocess.py",
-    "pipeline/fetch_data.py",
-    "pipeline/train_model.py",
-    "pipeline/rag_explainer.py",
-    "pipeline/analyst.py",
-    "requirements.txt",
+    "safety_nlp_pipeline/main.py",
+    "safety_nlp_pipeline/config.py",
+    "safety_nlp_pipeline/app_streamlit.py",
+    "safety_nlp_pipeline/src/__init__.py",
+    "safety_nlp_pipeline/src/data_fetcher.py",
+    "safety_nlp_pipeline/src/preprocessor.py",
+    "safety_nlp_pipeline/src/trainer.py",
+    "safety_nlp_pipeline/src/evaluator.py",
+    "safety_nlp_pipeline/src/rag_explainer.py",
+    "safety_nlp_pipeline/src/analyst.py",
+    "safety_nlp_pipeline/src/report_generator.py",
+    "safety_nlp_pipeline/requirements.txt",
+    "safety_nlp_pipeline/.streamlit/config.toml",
 ]
 
 ACCENT = RGBColor(0x0F, 0x6B, 0x9E)
@@ -51,6 +64,53 @@ def add_code_block(doc, code: str):
     doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
 
+def _read_json(rel_path: str) -> dict:
+    """Best-effort JSON read; returns {} on any failure."""
+    try:
+        return json.loads((ROOT / rel_path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def load_latest_metrics() -> dict:
+    """Pull the most recent training/evaluation numbers from data/."""
+    train = _read_json("safety_nlp_pipeline/data/training_config.json")
+    met = _read_json("safety_nlp_pipeline/data/metrics.json")
+    return {
+        "accuracy": met.get("accuracy"),
+        "n_classes": met.get("n_classes"),
+        "test_size": met.get("test_size"),
+        "best_cv_f1": train.get("best_cv_f1_weighted"),
+        "best_params": train.get("best_params", {}),
+        "n_train": train.get("n_train"),
+    }
+
+
+def add_latest_results(doc, metrics: dict) -> None:
+    doc.add_heading("1.4 Latest run results", level=2)
+    present = any(v is not None for v in metrics.values())
+    if not present:
+        doc.add_paragraph("No persisted metrics found yet - run `python main.py` "
+                          "inside safety_nlp_pipeline/ to generate them.")
+        return
+    lines = []
+    if metrics.get("accuracy") is not None:
+        lines.append(f"Test accuracy            : {metrics['accuracy']:.1%}")
+    if metrics.get("best_cv_f1") is not None:
+        lines.append(f"Best CV F1 (weighted)    : {metrics['best_cv_f1']:.3f}")
+    if metrics.get("n_classes") is not None:
+        lines.append(f"Classes                  : {metrics['n_classes']}")
+    if metrics.get("n_train") is not None:
+        lines.append(f"Training rows            : {metrics['n_train']}")
+    if metrics.get("test_size") is not None:
+        lines.append(f"Test rows                : {metrics['test_size']}")
+    bp = metrics.get("best_params") or {}
+    if bp:
+        lines.append("Best hyperparameters     : "
+                     + "; ".join(f"{k} = {v}" for k, v in bp.items()))
+    add_code_block(doc, "\n".join(lines))
+
+
 def main():
     doc = Document()
 
@@ -69,13 +129,14 @@ def main():
 
     s = doc.add_paragraph()
     s.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = s.add_run("Terminal-based NLP demonstration — NASA ASRS · NERC power grid · TF-IDF · SGD · RAG")
+    r = s.add_run("Production-grade headless pipeline — NASA ASRS · NERC power grid · "
+                  "TF-IDF · SGD · GridSearchCV · RAG · HTML report · Streamlit dashboard")
     r.font.size = Pt(12)
     r.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
 
     d = doc.add_paragraph()
     d.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = d.add_run("Implementation Code & Project Summary (DOCX)")
+    r = d.add_run("Project Summary, Updated Project Overview & Full Implementation Code (DOCX)")
     r.font.size = Pt(11)
     r.font.italic = True
 
@@ -84,21 +145,26 @@ def main():
     # ---------- 1. Project summary ----------
     doc.add_heading("1. Project Summary", level=1)
     doc.add_paragraph(
-        "This project is a terminal TUI (Textual) application that visually demonstrates a complete "
-        "NLP pipeline for infrastructure safety, working on REAL incident data from two public domains: "
-        "NASA ASRS aviation incident reports and NERC power-grid event analysis reports. Everything runs "
-        "inside the terminal — no browser required."
+        "This project is a production-grade, HEADLESS NLP pipeline that runs end-to-end "
+        "with zero user intervention (`python main.py`). It classifies real safety-incident "
+        "reports from two public domains - NASA ASRS aviation incident reports and NERC "
+        "power-grid event analysis reports - and produces a comprehensive, self-contained "
+        "HTML report (model metrics, confusion matrix, RAG evidence, data quality insights). "
+        "A Streamlit web dashboard with a warm, creamy-light theme makes the results "
+        "accessible to stakeholders who are not comfortable with the command line."
     )
 
     doc.add_heading("1.1 Key features", level=2)
     for item in [
-        "Numbered option menu (1–7): Fetch / View Datasets / Train / RAG Explainer / NLP Data Assistant / Pipeline Log / Exit.",
-        "Visual progress: every operation shows a live stage label + progress bar driven by REAL work — rows streamed, documents NLTK-preprocessed, minibatches fitted ([███░░░] PREPROCESSING 412/2035 (NLTK)).",
-        "Live data collection: option 1 LIVE-downloads real safety data every run — NASA ASRS reports (Hugging Face datasets-server) + 12 NERC event-analysis PDFs (parsed with pypdf, split with NLTK sentence tokenization), merged into one Domain-tagged dataset.",
-        "Dataset viewer: lists every CSV in data/ in a dropdown and shows a narrative preview table (with domain) plus the anomaly-category distribution.",
-        "NLP data assistant (keyless, no LLM/API key): reports data-quality issues (duplicates, short reports, class imbalance), a domain split (Aviation vs Power Grid) and a safety-criticality breakdown. It can also scan any pasted report narrative for high-risk phrases.",
-        "RAG explainer: classifies a new incident (aviation or power-grid) and retrieves the top-3 most similar historical reports (cosine similarity) as evidence with similarity bars.",
-        "Headless CLI fallback: python app.py --fetch / --train / --explain <text> for scripting/CI.",
+        "One command, no intervention: python main.py runs fetch -> preprocess -> train -> evaluate -> RAG -> HTML report.",
+        "Model robustness: StratifiedKFold cross-validation + GridSearchCV hyperparameter tuning (alpha x class_weight) over TF-IDF (bigrams) + SGD(log-loss).",
+        "Fault tolerance: each data source is fetched independently with graceful per-domain fallback to cached data; the pipeline is idempotent (skips fetch if a cached CSV exists).",
+        "Live data collection: NASA ASRS reports (Hugging Face datasets-server) + 12 NERC event-analysis PDFs (pypdf + NLTK sentence tokenization), merged into one domain-tagged dataset.",
+        "Rich HTML report: Jinja2 template with dataset statistics, data-quality audit, best hyperparameters, per-class metrics table, embedded confusion-matrix + class distribution plots, and RAG evidence examples with similarity bars.",
+        "Batch RAG explainability: a sample of the test set is explained with the top-3 most similar historical reports per prediction - an auditable, explainable-by-example system.",
+        "Streamlit web dashboard (creamy light theme): Overview, Model Performance, RAG Explorer (live predictions + evidence) and Data Assistant tabs.",
+        "Keyless data assistant (no LLM/API key): data-quality issues, class balance, domain split, safety-criticality breakdown and risk-phrase scanning with pandas.",
+        "Logging: every step writes to the console and pipeline.log for full traceability.",
     ]:
         doc.add_paragraph(item, style="List Bullet")
 
@@ -106,83 +172,108 @@ def main():
     arch = (
         "data/real_safety_dataset.csv   (NASA ASRS + NERC, ~3,700 domain-tagged reports)\n"
         "        |\n"
-        "  1. FETCH   (live: ASRS datasets-server + NERC PDFs -> clean -> merge by Domain)\n"
+        "  [1/6] FETCH   (live: ASRS datasets-server + NERC PDFs -> clean -> merge by domain)\n"
         "        |\n"
-        "  2. PREPROCESS  (NLTK tokenize -> stopword removal -> lemmatize, per-document)\n"
+        "  [2/6] PREPROCESS  (NLTK tokenize -> stopword removal -> lemmatize, per-document)\n"
         "        |\n"
-        "  3. TRAIN   (TF-IDF bigrams -> SGD/log-loss, balanced class weights,\n"
-        "         |         minibatch partial_fit over 3 epochs, saved as data/*.pkl)\n"
-        "  4. RAG EXPLAINER (vectorize new report -> predict category ->\n"
-        "                     batch cosine similarity vs all reports -> top-3 evidence)\n"
+        "  [3/6] TRAIN   (TF-IDF bigrams, max_features=5000 -> SGD/log-loss,\n"
+        "        |        GridSearchCV: alpha x class_weight, StratifiedKFold CV,\n"
+        "        |        best model + vectorizer saved to data/*.pkl)\n"
+        "  [4/6] EVALUATE (classification report, confusion-matrix heatmap,\n"
+        "        |         class-distribution plot -> data/plots/*.png, persisted metrics)\n"
+        "  [5/6] RAG EXPLAINABILITY (test-set sample -> predict each report ->\n"
+        "        |                     batch cosine similarity vs all training\n"
+        "        |                     narratives -> top-3 evidence spans)\n"
+        "  [6/6] HTML REPORT (Jinja2 self-contained page -> reports/pipeline_report.html)\n"
         "        |\n"
-        "  5. NLP DATA ASSISTANT (pandas insights: quality audit + domain + criticality)"
+        "  [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)"
     )
     add_code_block(doc, arch)
 
-    doc.add_heading("1.3 Results", level=2)
-    for item in [
-        "Dataset: ~3,700 cleaned reports — 2,000 NASA ASRS aviation narratives (expert anomaly labels from Events_Anomaly) + ~1,700 power-grid narratives extracted from 12 public NERC event-analysis PDFs.",
-        "Model accuracy: ~68% weighted accuracy over 28 classes with TF-IDF + SGD/log-loss (aviation classes are noisy and imbalanced; power-grid classes like 'Northeast Blackout 2003' are cleanly separated).",
-        "RAG explainer: aviation queries predict ATC/conflict categories with aviation evidence; power-grid queries predict NERC event categories (e.g. 'Power Grid - Northeast Snowstorm 2011') with grid-incident evidence — both with real similarity bars.",
-    ]:
-        doc.add_paragraph(item, style="List Bullet")
+    add_latest_results(doc, load_latest_metrics())
 
-    doc.add_heading("1.4 How to run", level=2)
+    doc.add_heading("1.5 How to run", level=2)
     add_code_block(
         doc,
+        "cd safety_nlp_pipeline\n"
         "pip install -r requirements.txt\n"
-        "python app.py                          # interactive TUI (numbered menu)\n"
-        "python app.py --fetch                  # headless: live-download both domains\n"
-        "python app.py --train                  # headless: train model\n"
-        'python app.py --explain "engine fire right after takeoff"   # headless explain',
+        "python main.py                        # full pipeline, one command\n"
+        "# open reports/pipeline_report.html in a browser\n\n"
+        "streamlit run app_streamlit.py        # web dashboard (http://localhost:8501)\n\n"
+        "# optional flags:\n"
+        "python main.py --force-refresh        # re-download data\n"
+        "python main.py --no-fetch             # use cached CSV only\n"
+        "python main.py --no-rag               # skip RAG explainability\n"
+        "python main.py --samples 200          # RAG test samples",
     )
 
-    # ---------- 2. Project structure ----------
-    doc.add_heading("2. Project Structure", level=1)
+    # ---------- 2. Updated project overview ----------
+    doc.add_heading("2. Updated Project Overview", level=1)
+    doc.add_paragraph(
+        "The full, current project overview is reproduced below (from "
+        "PROJECT_OVERVIEW.txt) and reflects everything implemented in the "
+        "restructured production build."
+    )
+    overview_text = OVERVIEW.read_text(encoding="utf-8") if OVERVIEW.exists() else ""
+    add_code_block(doc, overview_text)
+
+    # ---------- 3. Project structure ----------
+    doc.add_heading("3. Project Structure", level=1)
     add_code_block(
         doc,
         "Aviation_NLP_Project/\n"
-        "├── app.py                 TUI entry point (Textual) + headless CLI\n"
-        "├── pipeline/\n"
-        "│   ├── paths.py           data/ layout, live data-source URLs, defaults\n"
-        "│   ├── fetch_data.py      step 1: live-download ASRS + NERC, merge by domain\n"
-        "│   ├── preprocess.py      shared NLTK domain preprocessing\n"
-        "│   ├── train_model.py     step 2: TF-IDF + SGD/log-loss minibatch training\n"
-        "│   ├── rag_explainer.py   step 3: classify + batch semantic evidence retrieval\n"
-        "│   └── analyst.py         NLP data assistant (quality & safety analysis)\n"
-        "├── data/                  artifacts (datasets *.csv, models *.pkl)\n"
-        "├── requirements.txt       textual, pandas, scikit-learn, datasets, joblib, nltk, pypdf\n"
-        "└── README.md",
-    )
-    doc.add_paragraph(
-        "scikit-learn appears in requirements.txt because the training step uses its "
-        "TfidfVectorizer, SGDClassifier (log-loss, minibatch training), "
-        "train_test_split and classification_report, and the RAG step uses its "
-        "cosine_similarity."
+        "|-- make_report.py             builds this DOCX report\n"
+        "|-- PROJECT_OVERVIEW.txt       full updated project overview\n"
+        "|-- app.py, pipeline/          legacy Textual TUI (kept as a developer tool)\n"
+        "`-- safety_nlp_pipeline/\n"
+        "    |-- README.md\n"
+        "    |-- requirements.txt\n"
+        "    |-- config.py              all parameters (paths, model settings, ...)\n"
+        "    |-- main.py                single entry point - runs the full pipeline\n"
+        "    |-- app_streamlit.py       Streamlit web dashboard (creamy light theme)\n"
+        "    |-- .streamlit/config.toml dashboard theme configuration\n"
+        "    |-- src/\n"
+        "    |   |-- data_fetcher.py    downloads ASRS (HF) + NERC (PDFs) -> CSV\n"
+        "    |   |-- preprocessor.py    NLTK tokenization, stopwords, lemmatization\n"
+        "    |   |-- trainer.py         TF-IDF + SGD classifier (log-loss) with GridSearchCV\n"
+        "    |   |-- evaluator.py       classification report, confusion matrix, plots\n"
+        "    |   |-- rag_explainer.py   batch + single-query semantic retrieval (cosine)\n"
+        "    |   |-- analyst.py         keyless data quality & safety analysis\n"
+        "    |   `-- report_generator.py self-contained HTML report (Jinja2)\n"
+        "    |-- data/                  auto-created; CSV, models, plots, metrics\n"
+        "    `-- reports/               pipeline_report.html",
     )
 
-    # ---------- 3. Implementation code ----------
-    doc.add_heading("3. Implementation Code", level=1)
+    # ---------- 4. Implementation code ----------
+    doc.add_heading("4. Implementation Code", level=1)
     doc.add_paragraph(
-        "Complete source of every file in the project. Each code block is rendered in "
-        "monospace (Consolas) with a shaded background for readability."
+        "Complete source of every file in the production pipeline. Each code block is "
+        "rendered in monospace (Consolas) with a shaded background for readability."
     )
     for rel in CODE_FILES:
         path = ROOT / rel
-        doc.add_heading(f"3.{CODE_FILES.index(rel) + 1}  {rel}", level=2)
+        if not path.exists():
+            doc.add_heading(f"4.{CODE_FILES.index(rel) + 1}  {rel}  (MISSING)",
+                            level=2)
+            continue
+        doc.add_heading(f"4.{CODE_FILES.index(rel) + 1}  {rel}", level=2)
         add_code_block(doc, path.read_text(encoding="utf-8"))
 
-    # ---------- 4. Dependencies ----------
-    doc.add_heading("4. Dependencies", level=1)
+    # ---------- 5. Dependencies ----------
+    doc.add_heading("5. Dependencies", level=1)
     add_code_block(
         doc,
-        "textual>=8.2        Terminal UI framework (progress bars, tables, menus)\n"
         "pandas>=2.2         Dataframes for dataset processing & assistant analysis\n"
-        "scikit-learn>=1.5   TF-IDF, SGDClassifier, cosine similarity, metrics\n"
+        "scikit-learn>=1.5   TF-IDF, SGDClassifier, GridSearchCV, cosine similarity\n"
         "datasets>=3.0       Hugging Face datasets-server client (aviation source)\n"
         "joblib>=1.4         Model & vectorizer pickling\n"
         "nltk>=3.8           Tokenization, stopwords, lemmatization, sentence split\n"
-        "pypdf>=4.0          NERC PDF text extraction (power-grid source)",
+        "pypdf>=4.0          NERC PDF text extraction (power-grid source)\n"
+        "requests>=2.31      HTTP downloads (HF datasets-server + NERC PDFs)\n"
+        "matplotlib>=3.8     Confusion matrix & class distribution plots\n"
+        "seaborn>=0.13       Heatmap rendering\n"
+        "jinja2>=3.1         HTML report templates\n"
+        "streamlit>=1.37     Web dashboard (creamy light theme)",
     )
 
     doc.add_paragraph()

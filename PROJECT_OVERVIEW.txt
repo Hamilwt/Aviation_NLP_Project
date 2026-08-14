@@ -8,58 +8,68 @@ TABLE OF CONTENTS
   2. Project goals
   3. Data sources
   4. Pipeline architecture
-  5. The terminal UI (Textual TUI)
-  6. NLP data assistant
+  5. Web dashboard (Streamlit)
+  6. Fault tolerance & idempotency
   7. Headless CLI
-  8. Dependencies
-  9. Project structure
- 10. How to run
- 11. Results
- 12. Git history
- 13. Extras (report generation & research documents)
+  8. Configuration
+  9. Dependencies
+ 10. Project structure
+ 11. How to run
+ 12. Results
+ 13. Research gaps addressed
+ 14. Git history
+ 15. Extras
 
 
 --------------------------------------------------------------------------------
 1. WHAT THIS PROJECT IS
 --------------------------------------------------------------------------------
-A fully terminal-driven demonstration of a REAL NLP pipeline over real
-safety-incident data. It is built as an interactive TUI (Textual) with no
-browser and no fake animation — every progress bar is driven by actual work
-(rows downloaded, documents preprocessed, minibatches fitted).
+A production-grade, HEADLESS NLP pipeline that runs end-to-end with ZERO user
+intervention (`python main.py`) and produces a comprehensive, self-contained
+HTML report (model metrics, confusion matrix, RAG evidence examples, data
+quality insights). A Streamlit web dashboard with a warm, creamy-light theme
+makes the results accessible to stakeholders who are not comfortable with the
+command line.
 
-The pipeline covers two safety-critical domains:
+The pipeline is modular, reproducible and fault tolerant: if a data source is
+temporarily unavailable it falls back to cached data or gracefully skips that
+domain.
+
+It covers two safety-critical domains:
   - AVIATION   : NASA ASRS (Aviation Safety Reporting System) incident reports
   - POWER GRID : NERC (North American Electric Reliability Corporation) event
                  analysis reports
 
 It performs, end to end:
-  1. Live data collection (fetch / refresh)
+  1. Live data collection (fetch / refresh, idempotent)
   2. Text preprocessing (NLTK)
-  3. Classification model training (TF-IDF + SGD/logistic regression)
-  4. RAG explainability (semantic evidence retrieval)
-  5. Data quality / safety analysis (keyless "NLP data assistant")
+  3. Classification model training (TF-IDF + SGD/log-loss with GridSearchCV)
+  4. Evaluation (classification report + confusion matrix + plots)
+  5. Batch RAG explainability (semantic evidence retrieval for the test set)
+  6. Self-contained HTML report generation (Jinja2)
+  7. Interactive Streamlit dashboard for stakeholders
 
 
 --------------------------------------------------------------------------------
 2. PROJECT GOALS
 --------------------------------------------------------------------------------
-  - Demonstrate a complete, real NLP pipeline over real public safety data.
-  - Show every NLP stage visually inside the terminal with genuine progress
-    (no staged animation).
-  - Work on two different domains (aviation + power grid) merged into one
-    domain-tagged dataset, proving the pipeline generalizes.
-  - Make model predictions explainable: RAG retrieves the top-3 most similar
-    historical reports as evidence for every classification.
-  - Provide a "keyless" data assistant (no LLM, no API key) that audits data
-    quality and safety criticality with pandas.
-  - Stay scriptable via a headless CLI for CI / scripting.
+  - Build a professional, observable, repeatable NLP solution over real public
+    safety data that produces tangible outputs (HTML report + web dashboard).
+  - Zero user intervention: one command runs the entire pipeline.
+  - Every prediction must be explainable: RAG retrieves the top-3 most similar
+    historical reports as evidence (an auditable explanation by example).
+  - Model robustness: cross-validation (StratifiedKFold) + hyperparameter
+    tuning (GridSearchCV over alpha and class_weight).
+  - Fault tolerance: per-domain graceful fallback to cached data.
+  - A "keyless" data assistant (no LLM, no API key) that audits data quality
+    and safety criticality with pandas.
 
 
 --------------------------------------------------------------------------------
 3. DATA SOURCES
 --------------------------------------------------------------------------------
-The dataset is collected LIVE from public sources every run — nothing is
-pre-baked into the repository.
+The dataset is collected LIVE from public sources every run (or reused from a
+cache) — nothing is pre-baked into the repository.
 
   DOMAIN      | SOURCE                                   | WHAT IS DOWNLOADED
   ------------+------------------------------------------+--------------------
@@ -76,22 +86,19 @@ pre-baked into the repository.
 
 Aviation: streamed row-by-row from the Hugging Face datasets-server API in
 paginated batches of 100. Narrative text from "Report 1_Narrative", expert
-anomaly labels from "Events_Anomaly" (multi-label strings split to the
-primary category; rare categories bucketed as "Other").
+anomaly labels from "Events_Anomaly" (multi-label strings split to the primary
+category; rare categories bucketed as "Other").
 
-Power grid: 12 public NERC PDFs are downloaded, text is extracted with pypdf
-and split into incident narratives with NLTK sentence tokenization (~5
-sentences per chunk).
+Power grid: 12 public NERC PDFs are downloaded (cached in data/raw/), text is
+extracted with pypdf and split into incident narratives with NLTK sentence
+tokenization (~5 sentences per chunk).
 
 Both sources are cleaned (dedupe, drop empty labels, drop very short rows,
 collapse whitespace) and merged into one Domain-tagged dataset saved at:
     data/real_safety_dataset.csv
 (~3,700 cleaned reports: 2,000 aviation + ~1,700 power-grid narratives)
 
-If a source is unreachable, the run falls back to the cached copy instead of
-dying.
-
-The 12 NERC reports (from pipeline/paths.py):
+The 12 NERC reports (from config.py):
   - Power Grid - Northeast Blackout 2003
   - Power Grid - Hurricane Sandy
   - Power Grid - Hurricane Harvey
@@ -111,19 +118,24 @@ The 12 NERC reports (from pipeline/paths.py):
 --------------------------------------------------------------------------------
   data/real_safety_dataset.csv   (NASA ASRS + NERC, ~3,700 domain-tagged reports)
         |
-  1. FETCH   (live: ASRS datasets-server + NERC PDFs -> clean -> merge by Domain)
+  [1/6] FETCH   (live: ASRS datasets-server + NERC PDFs -> clean -> merge by domain)
         |
-  2. PREPROCESS  (NLTK tokenize -> stopword removal -> lemmatize, per-document)
+  [2/6] PREPROCESS  (NLTK tokenize -> stopword removal -> lemmatize, per-document)
         |
-  3. TRAIN   (TF-IDF bigrams -> SGD/log-loss, balanced class weights,
-        |    minibatch partial_fit over 3 epochs, saved as data/*.pkl)
-  4. RAG EXPLAINER (vectorize new report -> predict category ->
-                    batch cosine similarity vs all reports -> top-3 evidence)
+  [3/6] TRAIN   (TF-IDF bigrams, max_features=5000 -> SGD/log-loss,
+        |        GridSearchCV: alpha x class_weight, StratifiedKFold CV,
+        |        best model + vectorizer saved to data/*.pkl)
+  [4/6] EVALUATE (classification report, confusion-matrix heatmap,
+        |         class-distribution plot -> data/plots/*.png, persisted metrics)
+  [5/6] RAG EXPLAINABILITY (sample of the test set -> predict each report ->
+        |                     batch cosine similarity vs all training
+        |                     narratives -> top-3 evidence spans)
+  [6/6] HTML REPORT (Jinja2 self-contained page -> reports/pipeline_report.html)
         |
-  5. NLP DATA ASSISTANT (pandas insights: quality audit + domain + criticality)
+  [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)
 
 STEP DETAILS
-  1. FETCH_DATA (pipeline/fetch_data.py)
+  1. DATA_FETCHER (src/data_fetcher.py)
      - _fetch_aviation(): streams ASRS rows from datasets-server; keeps rows
        with a narrative AND a non-empty anomaly label; top-15 categories kept,
        the rest merged into "Other".
@@ -131,199 +143,209 @@ STEP DETAILS
        header/footer noise lines, sentence-tokenizes with NLTK and builds
        ~5-sentence narrative chunks tagged with the event label.
      - Graceful SSL fallback (some corporate / Python CA stores fail).
-     - Merges both into one DataFrame with a "Domain" column and saves CSV.
+     - Merges both domains into one "domain"-tagged DataFrame and saves CSV.
 
-  2. PREPROCESS (pipeline/preprocess.py)
+  2. PREPROCESSOR (src/preprocessor.py)
      - NLTK: tokenize -> lowercase -> keep alphanumeric -> remove English
        stopwords -> WordNet lemmatize. NLTK corpora auto-download on first run.
 
-  3. TRAIN_MODEL (pipeline/train_model.py)
-     - Per-document NLTK preprocessing with real progress
-       (e.g. "PREPROCESSING 412/2035 (NLTK)").
-     - TfidfVectorizer: stop_words="english", max_features=3000,
+  3. TRAINER (src/trainer.py)
+     - Per-document NLTK preprocessing with progress logging.
+     - Stratified train/test split (80/20, random_state=42).
+     - TfidfVectorizer: stop_words="english", max_features=5000,
        ngram_range=(1, 2) — bigrams capture domain terms like "gear down" /
        "load shed" / "transmission line".
-     - Stratified train/test split (80/20, random_state=42).
-     - SGDClassifier with loss="log_loss" (mathematically the same objective
-       as logistic regression, but trains incrementally via partial_fit so the
-       progress bar reflects real minibatch fits).
-     - 3 epochs, batch size 256, shuffled order, balanced class weights.
-     - Evaluates with classification_report and saves model + vectorizer as
-       data/safety_model.pkl and data/tfidf_vectorizer.pkl (joblib).
+     - GridSearchCV over SGDClassifier(loss="log_loss") hyperparameters
+       (alpha in [1e-5, 1e-4, 1e-3] x class_weight in [None, "balanced"])
+       using StratifiedKFold(3) and f1_weighted scoring. The test set is never
+       used for tuning.
+     - Saves best model + vectorizer (joblib) and training_config.json.
 
-  4. RAG_EXPLAINER (pipeline/rag_explainer.py)
-     - Loads dataset + trained artifacts.
-     - Preprocesses the new report, TF-IDF vectorizes it, predicts its risk
-       category.
-     - Embeds the whole historical corpus in real batches of 200 and computes
-       cosine similarity batch-by-batch (real progress).
-     - Returns top-3 most similar historical reports (with similarity %, label
-       and domain) as in-context evidence for the prediction.
+  4. EVALUATOR (src/evaluator.py)
+     - Vectorizes the test set and predicts with the best model.
+     - Per-class classification report (precision/recall/f1/support).
+     - Confusion-matrix heatmap (normalised) + top-N class-distribution bar
+       chart, saved as PNGs under data/plots/.
+     - Persists classification_report.txt/.csv and metrics.json for the
+       dashboard.
 
-  5. ANALYST (pipeline/analyst.py)
-     - Keyless assistant. See section 6.
+  5. RAG_EXPLAINER (src/rag_explainer.py)
+     - batch_rag(): samples test reports; for each, predicts the class and
+       computes cosine similarity against ALL training narratives in batches;
+       returns the top-3 most similar historical reports as evidence.
+     - build_index() + explain_text(): fast single-query retrieval for the
+       interactive dashboard (the corpus matrix is precomputed once).
 
+  6. REPORT_GENERATOR (src/report_generator.py)
+     - Jinja2 template builds a self-contained HTML page with: project summary
+       + dataset statistics, data-quality audit, best hyperparameters,
+       per-class metrics table, embedded confusion-matrix and class
+       distribution plots (base64), and RAG examples with similarity bars.
+     - Saves as reports/pipeline_report.html — opens in any browser.
 
---------------------------------------------------------------------------------
-5. THE TERMINAL UI (Textual TUI)
---------------------------------------------------------------------------------
-Launch with:  python app.py
-
-Numbered menu (always available, re-open with 'm'):
-
-  1 · Fetch / Refresh dataset       4 · RAG explainer
-  2 · View datasets                 5 · NLP data assistant
-  3 · Train model                   6 · Pipeline log
-                                     7 · Exit
-
-WHAT EACH OPTION DOES
-  1. Fetch / Refresh — live-downloads the two real sources with real streaming
-     progress, then shows the cleaned, domain-tagged result.
-  2. View datasets — lists every CSV in data/ in a dropdown and opens the
-     selected one: raw narrative preview table (with domain) + anomaly-category
-     distribution. Any dataset file you add later appears here automatically.
-  3. Train model — full NLP training chain with visible real progress:
-     NLTK preprocessing -> TF-IDF vectorization -> stratified split -> SGD
-     (log-loss) minibatch training -> evaluation -> classification report.
-  4. RAG explainer — paste a new incident report; the system predicts its risk
-     category (aviation or power-grid) and retrieves the top-3 most similar
-     historical reports as evidence with similarity bars (block chars + %) and
-     the domain of each match.
-  5. NLP data assistant — keyless analyst working on the loaded dataset.
-  6. Pipeline log — full console output of every step, live.
-  7. Exit — close the TUI.
-
-WHAT THE PROGRESS BAR IS REALLY SHOWING (every % maps to real work):
-  - Fetch   : advances as ASRS rows are actually streamed and as each NERC PDF
-              is downloaded and parsed.
-  - Train   : advances per DOCUMENT during NLTK preprocessing, then per
-              MINIBATCH while the SGD/logistic classifier is fitted.
-  - RAG     : advances per real cosine-similarity batch.
-
-The pipeline status bar at the top shows which steps are done:
-  [OK] 1 FETCH  [OK] 2 TRAIN  [OK] 3 EXPLAIN
+  7. ANALYST (src/analyst.py)
+     - Keyless data assistant (quality / safety / classes / risk scanning).
+     - See section 5.
 
 
 --------------------------------------------------------------------------------
-6. NLP DATA ASSISTANT (option 5)
+5. WEB DASHBOARD (STREAMLIT)
 --------------------------------------------------------------------------------
-A keyless analyst — everything computed from the actual dataset with pandas,
-no LLM, no API key.
+Launch with:  streamlit run app_streamlit.py   (opens http://localhost:8501)
 
-Quick buttons: Summary, Quality/issues, Safety/critical, Classes.
+A warm, creamy-light themed dashboard (background #FFF8F0, headings #5C4033,
+buttons #F5E6D3) for stakeholders who prefer a browser over the terminal. It
+loads the artifacts produced by `python main.py` and serves live predictions.
 
-Free-form commands:
-  - quality / issues        what is right and wrong in the data (missing
-                            values, duplicate narratives, very short reports,
-                            class imbalance, 'Other' bucket coverage)
-  - safety / critical       safety-criticality breakdown (critical/high/medium
-                            via keyword rules), domain split (Aviation vs
-                            Power Grid) and the most frequent critical
-                            categories
-  - classes                 anomaly-category distribution
-  - analyze <text>          scans a narrative for high-risk phrases
-                            (TCAS RA, CFIT, NMAC, wake vortex, bird strike,
-                             fire/smoke, fuel, fatigue, weather, unstabilized
-                             approach, medical, passenger misconduct, ...)
-  - summary                 dataset row/column counts + quality report
+| Tab                  | Content                                                        |
+|----------------------|----------------------------------------------------------------|
+| Overview             | dataset size, domain split, class-distribution chart, sample rows |
+| Model Performance    | metrics, per-class classification table, confusion-matrix & distribution plots |
+| RAG Explorer         | paste an incident -> predicted class + top-3 evidence with similarity bars |
+| Data Assistant       | keyless quality / safety / class insights and risk-phrase scanning |
+
+The theme lives in .streamlit/config.toml and custom CSS in the app.
+
+
+--------------------------------------------------------------------------------
+6. FAULT TOLERANCE & IDEMPOTENCY
+--------------------------------------------------------------------------------
+  - If data/real_safety_dataset.csv already exists, the fetch step is skipped
+    entirely (idempotent). Delete the CSV or pass --force-refresh to download.
+  - Each domain is fetched independently. If one source fails, the pipeline
+    falls back to the cached rows for that domain, or gracefully skips it with
+    a warning.
+  - If both sources fail, the cached dataset is reused (if present).
+  - Downloaded NERC PDFs are cached in data/raw/ so re-fetches are fast.
+  - Legacy column names (Narrative / human_factors_groundtruth / Domain) are
+    auto-normalised to the canonical lowercase schema (narrative/label/domain).
+  - All steps log to the console AND pipeline.log.
 
 
 --------------------------------------------------------------------------------
 7. HEADLESS CLI
 --------------------------------------------------------------------------------
-For scripting / CI (no TUI):
+  python main.py --fetch-only       (not implemented; see flags)
+  python main.py --no-fetch         # skip fetching, require cached CSV
+  python main.py --force-refresh    # re-download data
+  python main.py --no-rag           # skip RAG explainability
+  python main.py --samples N        # RAG test samples (default 100)
 
-  python app.py --fetch                     # live-download both domains
-  python app.py --train                     # train + evaluate the model
-  python app.py --explain "<incident text>" # classify + RAG evidence
-
-Each pipeline module is also runnable directly:
-  python pipeline/fetch_data.py
-  python pipeline/train_model.py
-  python pipeline/rag_explainer.py
+Each src module is also runnable directly (e.g. python src/data_fetcher.py).
 
 
 --------------------------------------------------------------------------------
-8. DEPENDENCIES (requirements.txt)
+8. CONFIGURATION (config.py)
 --------------------------------------------------------------------------------
-  textual>=8.2        Terminal UI framework (progress bars, tables, menus)
+  Data      : NROWS_AVIATION=2000, TOP_CATEGORIES=15, NERC_PDFS, PDF_CACHE
+  Modeling  : MAX_FEATURES=5000, NGRAM_RANGE=(1,2), TEST_SIZE=0.2,
+              CV_FOLDS=3, GRID_ALPHAS, GRID_CLASS_WEIGHTS, SGD_MAX_ITER=1000
+  RAG       : RAG_TOP_K=3, RAG_BATCH=200, RAG_N_SAMPLES=100,
+              RAG_EVIDENCE_SNIPPET=170
+  Report    : RAG_EXAMPLES_IN_REPORT=10, PLOT_CLASS_TOP_N=10
+
+
+--------------------------------------------------------------------------------
+9. DEPENDENCIES (requirements.txt)
+--------------------------------------------------------------------------------
   pandas>=2.2         Dataframes for dataset processing & assistant analysis
-  scikit-learn>=1.5   TF-IDF, SGDClassifier, cosine similarity, metrics
+  scikit-learn>=1.5   TF-IDF, SGDClassifier, GridSearchCV, cosine similarity
   datasets>=3.0       Hugging Face datasets-server client (aviation source)
   joblib>=1.4         Model & vectorizer pickling
   nltk>=3.8           Tokenization, stopwords, lemmatization, sentence split
   pypdf>=4.0          NERC PDF text extraction (power-grid source)
-  python-docx>=1.1    Report generation (make_report.py)
+  requests>=2.31      HTTP downloads (HF datasets-server + NERC PDFs)
+  matplotlib>=3.8     Confusion matrix & class distribution plots
+  seaborn>=0.13       Heatmap rendering
+  jinja2>=3.1         HTML report templates
+  streamlit>=1.37     Web dashboard
 
 
 --------------------------------------------------------------------------------
-9. PROJECT STRUCTURE
+10. PROJECT STRUCTURE
 --------------------------------------------------------------------------------
-  Aviation_NLP_Project/
-  |-- app.py                     TUI entry point (Textual) + headless CLI
-  |-- make_report.py             generates Aviation_NLP_Pipeline_Report.docx
-  |-- README.md                  usage documentation
-  |-- requirements.txt           Python dependencies
-  |-- pipeline/
+  safety_nlp_pipeline/
+  |-- README.md                 usage documentation
+  |-- requirements.txt          Python dependencies
+  |-- config.py                 all parameters (paths, model settings, ...)
+  |-- main.py                   single entry point - runs the full pipeline
+  |-- app_streamlit.py          Streamlit web dashboard (creamy light theme)
+  |-- .streamlit/
+  |   `-- config.toml           dashboard theme configuration
+  |-- src/
   |   |-- __init__.py
-  |   |-- paths.py               data/ layout, live data-source URLs, defaults
-  |   |-- fetch_data.py          step 1: live-download ASRS + NERC, merge by domain
-  |   |-- preprocess.py          shared NLTK domain preprocessing
-  |   |-- train_model.py         step 2: TF-IDF + SGD/log-loss minibatch training
-  |   |-- rag_explainer.py       step 3: classify + batch semantic evidence retrieval
-  |   `-- analyst.py             NLP data assistant (quality & safety analysis)
-  |-- data/                      artifacts (git-ignored)
-  |   |-- real_safety_dataset.csv  combined dataset (~3,700 reports)
-  |   |-- safety_model.pkl         trained classifier
-  |   `-- tfidf_vectorizer.pkl     trained TF-IDF vectorizer
-  |-- Aviation_NLP_Pipeline_Report.docx   generated project report
-  |-- Research Document AI Applications in Aerospace and Power Infrastructure Safety.docx
-  |-- _research_extract.txt       text extraction of the research document
-  |-- _tables_extract.txt         tables extraction of the research document
-  `-- PROJECT_OVERVIEW.txt        this file
+  |   |-- data_fetcher.py       downloads ASRS (HF) + NERC (PDFs) -> CSV
+  |   |-- preprocessor.py       NLTK tokenization, stopwords, lemmatization
+  |   |-- trainer.py            TF-IDF + SGD classifier (log-loss) with GridSearchCV
+  |   |-- evaluator.py          classification report, confusion matrix, plots
+  |   |-- rag_explainer.py      batch + single-query semantic retrieval (cosine)
+  |   |-- analyst.py            keyless data quality & safety analysis
+  |   `-- report_generator.py   self-contained HTML report (Jinja2)
+  |-- data/                     auto-created; CSV, models, plots, metrics
+  |   |-- raw/                  cached NERC PDFs
+  |   |-- real_safety_dataset.csv
+  |   |-- safety_model.pkl
+  |   |-- tfidf_vectorizer.pkl
+  |   |-- training_config.json
+  |   |-- classification_report.txt / .csv
+  |   |-- metrics.json
+  |   `-- plots/                confusion_matrix.png, class_distribution.png
+  `-- reports/                  generated HTML report
+      `-- pipeline_report.html
 
-Key configuration (pipeline/paths.py):
-  ASRS_DATASET          = "elihoole/asrs-aviation-reports"
-  NROWS_LIMIT           = 2000        (aviation narratives to fetch)
-  TOP_CATEGORIES        = 15          (rare labels bucketed as "Other")
-  MAX_FEATURES          = 3000        (TF-IDF vocabulary size)
-  DEFAULT_DATASET       = data/real_safety_dataset.csv
-  DEFAULT_MODEL         = data/safety_model.pkl
-  DEFAULT_VECTORIZER    = data/tfidf_vectorizer.pkl
+The legacy Textual TUI (app.py + pipeline/) is preserved at the repo root as a
+developer tool and reads the same artifacts.
 
 
 --------------------------------------------------------------------------------
-10. HOW TO RUN
+11. HOW TO RUN
 --------------------------------------------------------------------------------
   pip install -r requirements.txt
-  python app.py                          # interactive TUI (numbered menu)
+  python main.py                          # full pipeline, one command
+  # open reports/pipeline_report.html in a browser
 
-Headless:
-  python app.py --fetch                  # live-download both domains
-  python app.py --train                  # train the model
-  python app.py --explain "engine fire right after takeoff"
+  streamlit run app_streamlit.py          # web dashboard
+  # open http://localhost:8501
 
-Press a number to select a menu option (or 'm' to re-open the menu at any
-time, 'q' to quit, Esc to drop to the console).
+First run auto-downloads the NLTK corpora (stopwords, punkt, wordnet) and the
+live datasets; allow 2-5 minutes. Subsequent runs reuse the cache.
 
 
 --------------------------------------------------------------------------------
-11. RESULTS
+12. RESULTS
 --------------------------------------------------------------------------------
   - Dataset : ~3,700 cleaned reports — 2,000 NASA ASRS aviation narratives
               (expert anomaly labels) + ~1,700 power-grid narratives extracted
               from 12 public NERC event-analysis PDFs.
-  - Model   : ~68% weighted accuracy over 28 classes with TF-IDF + SGD/log-loss
-              (aviation classes are noisy and imbalanced; power-grid classes
-              like 'Northeast Blackout 2003' are cleanly separated).
+  - Model   : ~70% weighted F1 / ~71% accuracy over 28 classes with TF-IDF +
+              SGD/log-loss and GridSearchCV (best: alpha=1e-4, balanced class
+              weights, CV F1 0.690). Aviation classes are noisy and
+              imbalanced; power-grid classes like 'Northeast Blackout 2003'
+              are near-perfect (F1 0.98).
   - RAG     : aviation queries predict ATC/conflict categories with aviation
-              evidence; power-grid queries predict NERC event categories
-              (e.g. 'Power Grid - Northeast Snowstorm 2011') with grid-incident
-              evidence — both with real similarity bars.
+              evidence; power-grid queries predict NERC event categories with
+              grid-incident evidence — every prediction is auditable.
+  - Outputs : reports/pipeline_report.html (self-contained) + Streamlit
+              dashboard; all metrics, plots and examples in one place.
 
 
 --------------------------------------------------------------------------------
-12. GIT HISTORY
+13. RESEARCH GAPS ADDRESSED
+--------------------------------------------------------------------------------
+  - Gap 4 (black-box provenance): RAG explainability module provides an audit
+    trail — the report and dashboard show which historical reports influenced
+    each prediction.
+  - Gap 2 (edge deployment): the lightweight TF-IDF + SGD model is far smaller
+    than LLMs and deploys to constrained devices easily.
+  - Gap 3 (cross-domain taxonomy): aviation and power-grid narratives share one
+    TF-IDF vocabulary, so the model distinguishes domains while RAG evidence
+    surfaces genuine cross-domain similarities when they exist.
+  - Gap 1 (physical constraints): the modular design allows swapping the
+    classifier output for a solver-based constraint verifier.
+
+
+--------------------------------------------------------------------------------
+14. GIT HISTORY
 --------------------------------------------------------------------------------
   91d65bc Refactor Aviation NLP Pipeline to Support Power-Grid Safety Data
   821104b Add research document, tables extract, and report generation script
@@ -337,17 +359,15 @@ time, 'q' to quit, Esc to drop to the console).
 
 
 --------------------------------------------------------------------------------
-13. EXTRAS
+15. EXTRAS
 --------------------------------------------------------------------------------
-  - make_report.py : script that programmatically builds
-                     Aviation_NLP_Pipeline_Report.docx — a styled DOCX report
-                     containing the project summary, architecture, structure,
-                     dependencies and the FULL source code of every project
-                     file (rendered as shaded monospace blocks).
+  - make_report.py : script that builds this DOCX report
+    (Aviation_NLP_Pipeline_Report.docx) containing the project summary, updated
+    overview, architecture, structure, dependencies, latest run metrics and the
+    FULL source code of every file.
   - Research document : "AI Applications in Aerospace and Power Infrastructure
-                     Safety" (DOCX) with _research_extract.txt and
-                     _tables_extract.txt text/tables extracts — supporting
-                     research material for the project.
+    Safety" (DOCX) with _research_extract.txt and _tables_extract.txt
+    text/tables extracts — supporting research material for the project.
 
 ================================================================================
 END OF PROJECT OVERVIEW
