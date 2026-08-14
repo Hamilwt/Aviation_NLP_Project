@@ -11,6 +11,7 @@ Alerts are written to `data/alerts.csv` and displayed live in the Streamlit **�
 ## Quick Start
 
 ### Prerequisites
+
 1. Run the full pipeline at least once so the model exists:
    ```bash
    cd safety_nlp_pipeline
@@ -19,6 +20,7 @@ Alerts are written to `data/alerts.csv` and displayed live in the Streamlit **�
 2. The monitor requires the artifacts: `data/safety_model.pkl`, `data/tfidf_vectorizer.pkl`, `data/real_safety_dataset.csv`.
 
 ### Start the Monitor
+
 ```bash
 # Continuous loop (default: poll every 60s, watches folder + live feeds)
 python -m src.monitor
@@ -31,6 +33,7 @@ python main.py --monitor --poll 30
 ```
 
 ### Feed It Incidents
+
 ```bash
 # Option 1: Drop a CSV into the watched folder
 echo 'id,narrative
@@ -42,6 +45,7 @@ DEMO-002,Unplanned power cut affecting 250 customers in PINNER.' \
 ```
 
 ### View Alerts
+
 ```bash
 streamlit run app_streamlit.py
 # → click the "���� Live Alerts" tab
@@ -88,31 +92,35 @@ streamlit run app_streamlit.py
 
 ## Data Sources
 
-| Source | Type | Cadence | Notes |
-|--------|------|---------|-------|
-| **Drop-in folder** | CSV/TXT files in `new_incidents/` | Every `MONITOR_POLL_SECONDS` (60s) | Forgiving parser: handles unquoted commas. |
-| **Master dataset** | Rows appended to `data/real_safety_dataset.csv` | Every loop | First scan establishes baseline — history is NOT re-alerted. |
-| **NTSB API** | US aviation accidents (probable-cause narratives) | Every `NTSB_POLL_SECONDS` (3600s / hourly) | `https://api.ai-analytics.org/api/v1/ntsb/aviation/recent` — CC0 public domain. Skips records without `probable_cause`. |
-| **UKPN Live Faults** | UK power cuts (unplanned only) | Every `UKPN_POLL_SECONDS` (60s) | `ukpn-live-faults` dataset on `ukpowernetworks.opendatasoft.com`. **NOTE**: `live-power-cuts` returns 404 — the real dataset is `ukpn-live-faults`. Power cuts affecting ≥ `ALERT_HIGH_MIN_CUSTOMERS` (100) escalate to `high` regardless of keyword hits. |
+| Source                     | Type                                              | Cadence                                     | Notes                                                                                                                                                                                                                                                                          |
+| -------------------------- | ------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Drop-in folder**   | CSV/TXT files in`new_incidents/`                | Every`MONITOR_POLL_SECONDS` (60s)         | Forgiving parser: handles unquoted commas.                                                                                                                                                                                                                                     |
+| **Master dataset**   | Rows appended to`data/real_safety_dataset.csv`  | Every loop                                  | First scan establishes baseline — history is NOT re-alerted.                                                                                                                                                                                                                  |
+| **NTSB API**         | US aviation accidents (probable-cause narratives) | Every`NTSB_POLL_SECONDS` (3600s / hourly) | `https://api.ai-analytics.org/api/v1/ntsb/aviation/recent` — CC0 public domain. Skips records without `probable_cause`.                                                                                                                                                   |
+| **UKPN Live Faults** | UK power cuts (unplanned only)                    | Every`UKPN_POLL_SECONDS` (60s)            | `ukpn-live-faults` dataset on `ukpowernetworks.opendatasoft.com`. **NOTE**: `live-power-cuts` returns 404 — the real dataset is `ukpn-live-faults`. Power cuts affecting ≥ `ALERT_HIGH_MIN_CUSTOMERS` (100) escalate to `high` regardless of keyword hits. |
 
 ---
 
 ## Drop-In Folder Format
 
 ### CSV (recommended)
+
 ```csv
 id,narrative
 INC-001,Lost communication with ATC due to static, declared emergency.
 INC-002,Unplanned power cut affecting 500 customers in PINNER area.
 ```
+
 - **id**: optional unique string (used for de-duplication).
 - **narrative**: required incident text.
 - Parser joins any unquoted commas back into the narrative.
 
 ### TXT (one file = one report)
+
 ```
 new_incidents/INC-003.txt
 ```
+
 Content is the full narrative; filename becomes the `incident_id`.
 
 ---
@@ -122,11 +130,10 @@ Content is the full narrative; filename becomes the `incident_id`.
 Returns **critical / high / medium** based on:
 
 1. **Raw-text triggers** (override model label):
+
    - **Critical**: `fire`, `smoke`, `explosion`, `crash`, `cfit`, `terrain`, `loss of communication`, `lost contact`, `radio failure`, `atc communication`, `power outage`, `power cut`, `blackout`, `grid collapse`, `system emergency`, `evacuation`, `emergency`, `mayday`, `engine failure`, `dual engine`.
    - **High**: `altitude`, `runway`, `weather`, `storm`, `hurricane`, `arctic`, `icing`, `turbulence`, `wind shear`, `engine`, `hydraulic`, `fuel`, `bird strike`, `decompression`, `loss of power`, `outage`.
-
 2. **Model label intrinsic criticality** (from `analyst._risk_level`): label keywords mapped to critical/high/medium.
-
 3. **High-risk narrative vocabulary** (if no label match): same high list above.
 
 Result priority: triggers → label → vocab → medium.
@@ -140,16 +147,15 @@ Result priority: triggers → label → vocab → medium.
 3. **Score risk**: `assess_risk` → critical / high / medium.
 4. **Filter**: only **critical** and **high** become alerts; medium is logged as "No alert".
 5. **Persist**: `log_alert` appends one row to `data/alerts.csv`:
-   | Column | Description |
-   |--------|-------------|
-   | `timestamp` | ISO datetime |
-   | `incident_id` | stable ID (from source) |
-   | `source` | `watch/FILE.csv`, `dataset`, `NTSB API`, `UKPN Live Faults` |
-   | `risk_level` | `critical` / `high` / `medium` |
-   | `predicted_label` | model prediction |
-   | `narrative` | snippet (first `MONITOR_ALERT_SNIPPET` chars) |
-   | `evidence_json` | JSON array of RAG evidence dicts |
-
+   | Column              | Description                                                         |
+   | ------------------- | ------------------------------------------------------------------- |
+   | `timestamp`       | ISO datetime                                                        |
+   | `incident_id`     | stable ID (from source)                                             |
+   | `source`          | `watch/FILE.csv`, `dataset`, `NTSB API`, `UKPN Live Faults` |
+   | `risk_level`      | `critical` / `high` / `medium`                                |
+   | `predicted_label` | model prediction                                                    |
+   | `narrative`       | snippet (first`MONITOR_ALERT_SNIPPET` chars)                      |
+   | `evidence_json`   | JSON array of RAG evidence dicts                                    |
 6. **Display**: Streamlit Live Alerts tab reads `alerts.csv`, parses `evidence_json`, shows color-coded table + expanders with evidence.
 
 ---
@@ -157,6 +163,7 @@ Result priority: triggers → label → vocab → medium.
 ## De-duplication (Survives Restarts)
 
 State is persisted to `data/monitor_state.json` after every scan:
+
 - **Seen incident keys** (incident_id or hash of narrative).
 - **Seen files** (name + size + mtime) — unchanged files skipped.
 - **Master dataset baseline** (row count) — only NEW rows after first scan.
@@ -178,6 +185,7 @@ A monitor **restart never re-alerts** on already-processed incidents.
 ## CLI Reference
 
 ### `python -m src.monitor`
+
 ```text
 usage: monitor.py [-h] [--watch-dir WATCH_DIR] [--delay DELAY]
                   [--once] [--no-api]
@@ -192,6 +200,7 @@ options:
 ```
 
 ### `python main.py --monitor --poll N`
+
 Runs the full pipeline, then starts the monitor loop with poll interval `N` seconds (default 60).
 
 ---
@@ -199,6 +208,7 @@ Runs the full pipeline, then starts the monitor loop with poll interval `N` seco
 ## Verification / Testing
 
 ### 1. Unit smoke (no network, no artifacts)
+
 ```bash
 python -c "
 from src import monitor
@@ -209,6 +219,7 @@ print('assess_risk OK')
 ```
 
 ### 2. End-to-end scan with seeded file (no live feeds)
+
 ```bash
 # clean slate
 rm -f data/alerts.csv data/monitor_state.json
@@ -223,6 +234,7 @@ python -m src.monitor --once --no-api
 ```
 
 ### 3. Live API poll test (requires network)
+
 ```bash
 python -c "
 from src import monitor
@@ -235,6 +247,7 @@ monitor._save_state(state)
 ```
 
 ### 4. Streamlit AppTest (automated)
+
 ```bash
 python -c "
 from streamlit.testing.v1 import AppTest
@@ -250,17 +263,17 @@ print('DASHBOARD OK')
 
 ## Configuration (config.py)
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `WATCH_DIR` | `BASE_DIR / "new_incidents"` | Drop-in folder |
-| `ALERT_LOG_PATH` | `DATA_DIR / "alerts.csv"` | Alert log |
-| `MONITOR_POLL_SECONDS` | `60` | Main loop delay |
-| `MONITOR_ALERT_SNIPPET` | `200` | Narrative chars stored |
-| `NTSB_API_URL` | `.../ntsb/aviation/recent` | NTSB endpoint |
-| `NTSB_POLL_SECONDS` | `3600` | NTSB cadence (hourly) |
-| `UKPN_API_URL` | `.../ukpn-live-faults/records` | UKPN endpoint |
-| `UKPN_POLL_SECONDS` | `60` | UKPN cadence (every minute) |
-| `ALERT_HIGH_MIN_CUSTOMERS` | `100` | UKPN high-risk threshold |
+| Key                          | Default                          | Description                 |
+| ---------------------------- | -------------------------------- | --------------------------- |
+| `WATCH_DIR`                | `BASE_DIR / "new_incidents"`   | Drop-in folder              |
+| `ALERT_LOG_PATH`           | `DATA_DIR / "alerts.csv"`      | Alert log                   |
+| `MONITOR_POLL_SECONDS`     | `60`                           | Main loop delay             |
+| `MONITOR_ALERT_SNIPPET`    | `200`                          | Narrative chars stored      |
+| `NTSB_API_URL`             | `.../ntsb/aviation/recent`     | NTSB endpoint               |
+| `NTSB_POLL_SECONDS`        | `3600`                         | NTSB cadence (hourly)       |
+| `UKPN_API_URL`             | `.../ukpn-live-faults/records` | UKPN endpoint               |
+| `UKPN_POLL_SECONDS`        | `60`                           | UKPN cadence (every minute) |
+| `ALERT_HIGH_MIN_CUSTOMERS` | `100`                          | UKPN high-risk threshold    |
 
 Tune these for your environment (e.g., lower `UKPN_POLL_SECONDS` for faster reaction, raise `ALERT_HIGH_MIN_CUSTOMERS` to reduce noise).
 
@@ -268,16 +281,16 @@ Tune these for your environment (e.g., lower `UKPN_POLL_SECONDS` for faster reac
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `FileNotFoundError: Monitor artifact missing` | Model not trained | Run `python main.py` first. |
-| `TLS verification failed` | Corporate CA / cert store | Monitor uses `data_fetcher._http_get` which falls back to `verify=False` (logged warning). |
-| No alerts from NTSB | `probable_cause` is null for recent records | Normal — only records with cause text are processed. |
-| No alerts from UKPN | All recent records are `Planned` or `Restored` | Normal — only `Unplanned` cuts are incidents. |
-| Duplicate alerts after restart | State file missing / corrupted | Check `data/monitor_state.json` exists and is valid JSON. |
-| `ModuleNotFoundError: config` | Running from wrong directory | Run from `safety_nlp_pipeline/` root. |
-| `use_container_width` deprecation warnings | Streamlit ≥1.37 | Harmless; dashboard works. |
-| pypdf `CryptographyDeprecationWarning` | ARC4 deprecation | Harmless; PDF extraction works. |
+| Symptom                                         | Cause                                             | Fix                                                                                           |
+| ----------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `FileNotFoundError: Monitor artifact missing` | Model not trained                                 | Run`python main.py` first.                                                                  |
+| `TLS verification failed`                     | Corporate CA / cert store                         | Monitor uses`data_fetcher._http_get` which falls back to `verify=False` (logged warning). |
+| No alerts from NTSB                             | `probable_cause` is null for recent records     | Normal — only records with cause text are processed.                                         |
+| No alerts from UKPN                             | All recent records are`Planned` or `Restored` | Normal — only`Unplanned` cuts are incidents.                                               |
+| Duplicate alerts after restart                  | State file missing / corrupted                    | Check`data/monitor_state.json` exists and is valid JSON.                                    |
+| `ModuleNotFoundError: config`                 | Running from wrong directory                      | Run from`safety_nlp_pipeline/` root.                                                        |
+| `use_container_width` deprecation warnings    | Streamlit ≥1.37                                  | Harmless; dashboard works.                                                                    |
+| pypdf`CryptographyDeprecationWarning`         | ARC4 deprecation                                  | Harmless; PDF extraction works.                                                               |
 
 ---
 
@@ -293,7 +306,7 @@ Tune these for your environment (e.g., lower `UKPN_POLL_SECONDS` for faster reac
 
 ## Important Correction
 
-> **The UK Power Networks dataset often referenced as `live-power-cuts` does NOT exist (404).**  
+> **The UK Power Networks dataset often referenced as `live-power-cuts` does NOT exist (404).**
 > The real near-real-time feed is **`ukpn-live-faults`** — this is what the monitor polls every minute.
 
 ---

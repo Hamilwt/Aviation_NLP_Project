@@ -5,11 +5,17 @@ Run from the pipeline root:
     streamlit run app_streamlit.py
 
 Loads the artifacts produced by ``python main.py`` (dataset, model, vectorizer)
-and serves them through a warm, creamy-light themed interface with five tabs:
-Overview, Model Performance, RAG Explorer, Data Assistant and Live Alerts
-(raised by ``python -m src.monitor``).
+and serves them through a warm, creamy-light themed interface with six tabs:
+Overview, Model Performance, RAG Explorer, Data Assistant, Live Alerts
+(raised by ``python -m src.monitor``), and System Control (process management).
 """
 import json
+import os
+import queue
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 import joblib
@@ -58,6 +64,156 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ============================================================ Process Manager
+class ProcessManager:
+    """Manages subprocesses for pipeline, monitor, and dashboard with log streaming."""
+    
+    SERVICES = {
+        "pipeline": {
+            "cmd": [sys.executable, "main.py"],
+            "label": "Pipeline (main.py)",
+            "icon": "������",
+            "color": "#D4A574",
+        },
+        "monitor": {
+            "cmd": [sys.executable, "-m", "src.monitor"],
+            "label": "Monitor (src.monitor)",
+            "icon": "����",
+            "color": "#74B3D4",
+        },
+        "dashboard": {
+            "cmd": [sys.executable, "-m", "streamlit", "run", "app_streamlit.py", "--server.port", "8502"],
+            "label": "Dashboard (port 8502)",
+            "icon": "�������",
+            "color": "#A8D474",
+        },
+    }
+    
+    def __init__(self):
+        self.processes = {}
+        self.log_queues = {}
+        self.log_threads = {}
+        self.lock = threading.Lock()
+    
+    def _read_stream(self, stream, q, service_name):
+        """Background thread to read subprocess stdout/stderr."""
+        try:
+            for line in iter(stream.readline, ''):
+                if line:
+                    q.put((service_name, line.rstrip()))
+        except Exception:
+            pass
+        finally:
+            stream.close()
+    
+    def start(self, service_name: str) -> tuple[bool, str]:
+        """Start a service subprocess."""
+        with self.lock:
+            if service_name in self.processes and self.processes[service_name].poll() is None:
+                return False, f"{service_name} already running"
+            
+            svc = self.SERVICES[service_name]
+            cwd = Path(__file__).parent
+            
+            try:
+                proc = subprocess.Popen(
+                    svc["cmd"],
+                    cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            except Exception as e:
+                return False, f"Failed to start {service_name}: {e}"
+            
+            self.processes[service_name] = proc
+            self.log_queues[service_name] = queue.Queue()
+            
+            # Start log reader thread
+            t = threading.Thread(
+                target=self._read_stream,
+                args=(proc.stdout, self.log_queues[service_name], service_name),
+                daemon=True,
+            )
+            t.start()
+            self.log_threads[service_name] = t
+            
+            return True, f"{svc['label']} started (PID: {proc.pid})"
+    
+    def stop(self, service_name: str) -> tuple[bool, str]:
+        """Stop a service subprocess."""
+        with self.lock:
+            if service_name not in self.processes:
+                return False, f"{service_name} not running"
+            
+            proc = self.processes[service_name]
+            if proc.poll() is not None:
+                # Already dead
+                self._cleanup(service_name)
+                return True, f"{service_name} was already stopped"
+            
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            except Exception as e:
+                return False, f"Error stopping {service_name}: {e}"
+            finally:
+                self._cleanup(service_name)
+            
+            return True, f"{self.SERVICES[service_name]['label']} stopped"
+    
+    def _cleanup(self, service_name: str):
+        """Clean up process resources."""
+        self.processes.pop(service_name, None)
+        self.log_queues.pop(service_name, None)
+        self.log_threads.pop(service_name, None)
+    
+    def is_running(self, service_name: str) -> bool:
+        """Check if a service is currently running."""
+        with self.lock:
+            proc = self.processes.get(service_name)
+            return proc is not None and proc.poll() is None
+    
+    def get_logs(self, service_name: str, max_lines: int = 200) -> list[str]:
+        """Get recent logs for a service."""
+        if service_name not in self.log_queues:
+            return []
+        q = self.log_queues[service_name]
+        logs = []
+        try:
+            while not q.empty() and len(logs) < max_lines:
+                logs.append(q.get_nowait())
+        except queue.Empty:
+            pass
+        return logs
+    
+    def get_all_status(self) -> dict:
+        """Get status of all services."""
+        return {name: self.is_running(name) for name in self.SERVICES}
+    
+    def stop_all(self):
+        """Stop all running services."""
+        for name in list(self.processes.keys()):
+            self.stop(name)
+
+
+# Initialize process manager in session state
+if "proc_mgr" not in st.session_state:
+    st.session_state.proc_mgr = ProcessManager()
+if "log_buffer" not in st.session_state:
+    st.session_state.log_buffer = {name: [] for name in ProcessManager.SERVICES}
+if "auto_refresh" not in st.session_state:
+    st.session_state.auto_refresh = True
+
+proc_mgr = st.session_state.proc_mgr
+
 st.title(":shield: Safety NLP Pipeline - Dashboard")
 st.caption("Aviation & Power-Grid incident analysis &middot; TF-IDF + SGD &middot; RAG explainability")
 
@@ -104,10 +260,10 @@ if artifacts is None:
 df, model, vectorizer, index_vectors = artifacts
 
 # --------------------------------------------------------------------- tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [":bar_chart: Overview", ":chart_with_upwards_trend: Model Performance",
      ":mag: RAG Explorer", ":clipboard: Data Assistant",
-     ":rotating_light: Live Alerts"])
+     ":rotating_light: Live Alerts", ":gear: System Control"])
 
 # -------------------------------------------------------------- 1 · Overview
 with tab1:
@@ -308,3 +464,127 @@ with tab5:
                         """,
                         unsafe_allow_html=True,
                     )
+
+# ------------------------------------------------------ 6 · System Control
+with tab6:
+    st.subheader("System Control - unified process management")
+    st.caption("Start/stop the pipeline, monitor, and dashboard from one place. "
+               "Logs stream in real-time below.")
+    
+    # Auto-refresh toggle
+    col_refresh, col_clear = st.columns([3, 1])
+    # Disable auto-refresh during AppTest to avoid timeout
+    is_testing = os.environ.get("STREAMLIT_TESTING") == "1"
+    st.session_state.auto_refresh = col_refresh.checkbox(
+        "Auto-refresh logs (every 2s)", value=st.session_state.auto_refresh, disabled=is_testing)
+    if is_testing:
+        st.session_state.auto_refresh = False
+    if col_clear.button("Clear all logs"):
+        for name in st.session_state.log_buffer:
+            st.session_state.log_buffer[name] = []
+        st.rerun()
+    
+    # Service status overview
+    status = proc_mgr.get_all_status()
+    
+    # Control buttons row
+    st.write("**Service Controls**")
+    
+    for name, info in ProcessManager.SERVICES.items():
+        running = status[name]
+        label = info["label"]
+        color = info["color"]
+        
+        scol1, scol2, scol3, scol4 = st.columns([2, 1, 1, 4])
+        
+        with scol1:
+            # Status indicator
+            status_color = "#2ECC71" if running else "#E74C3C"
+            status_text = "RUNNING" if running else "STOPPED"
+            st.markdown(
+                f"""
+                <div style="background:{color};padding:8px;border-radius:6px;margin-bottom:4px;">
+                    <span style="color:white;font-weight:bold;">{info['icon']} {label}</span>
+                </div>
+                <div style="background:{status_color};padding:4px;border-radius:4px;text-align:center;font-size:0.85em;">
+                    {status_text}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        
+        with scol2:
+            if not running:
+                if st.button(f"Start", key=f"start_{name}", use_container_width=True):
+                    ok, msg = proc_mgr.start(name)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                    st.rerun()
+        
+        with scol3:
+            if running:
+                if st.button(f"Stop", key=f"stop_{name}", use_container_width=True, type="secondary"):
+                    ok, msg = proc_mgr.stop(name)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                    st.rerun()
+    
+    # Master controls
+    st.divider()
+    mcol1, mcol2, mcol3 = st.columns(3)
+    any_running = any(status.values())
+    all_running = all(status.values())
+    
+    with mcol1:
+        if st.button("���� Start ALL", use_container_width=True, type="primary", disabled=all_running):
+            for name in ProcessManager.SERVICES:
+                if not status[name]:
+                    proc_mgr.start(name)
+            st.rerun()
+    with mcol2:
+        if st.button("���� Stop ALL", use_container_width=True, type="secondary", disabled=not any_running):
+            proc_mgr.stop_all()
+            st.rerun()
+    with mcol3:
+        if st.button("���� Restart ALL", use_container_width=True):
+            proc_mgr.stop_all()
+            time.sleep(1)
+            for name in ProcessManager.SERVICES:
+                proc_mgr.start(name)
+            st.rerun()
+    
+    # Real-time logs
+    st.divider()
+    st.write("**Real-time Logs**")
+    
+    # Log tabs for each service
+    log_tabs = st.tabs([f"{info['icon']} {info['label']}" for info in ProcessManager.SERVICES.values()])
+    
+    for i, (name, info) in enumerate(ProcessManager.SERVICES.items()):
+        with log_tabs[i]:
+            # Collect new logs
+            new_logs = proc_mgr.get_logs(name)
+            for svc, line in new_logs:
+                if svc == name:
+                    st.session_state.log_buffer[name].append(line)
+            
+            # Keep buffer bounded
+            if len(st.session_state.log_buffer[name]) > 500:
+                st.session_state.log_buffer[name] = st.session_state.log_buffer[name][-500:]
+            
+            # Display logs
+            log_placeholder = st.empty()
+            if st.session_state.log_buffer[name]:
+                log_text = "\n".join(st.session_state.log_buffer[name])
+                log_placeholder.code(log_text, language="text")
+            else:
+                log_placeholder.info(f"No logs yet for {info['label']}. Start the service to see output.")
+    
+    # Auto-refresh logic
+    if st.session_state.auto_refresh:
+        time.sleep(2)
+        st.rerun()
