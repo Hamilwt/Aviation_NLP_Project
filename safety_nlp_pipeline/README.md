@@ -1,183 +1,257 @@
-# Safety NLP Pipeline (Headless)
+# Safety NLP Pipeline (Headless Python Core)
 
-A **production-grade, headless NLP pipeline** that runs end-to-end with **zero
-user intervention** and produces a **comprehensive HTML report** with all
-outcomes: model metrics, confusion matrix, RAG evidence examples and data
-quality insights.
+The **production-grade headless NLP pipeline** that powers the cross-platform dashboard. Runs end-to-end with **zero user intervention** and produces a **comprehensive HTML report** with all outcomes: model metrics, confusion matrix, RAG evidence examples, and data quality insights.
 
-It classifies real safety-incident reports from two domains:
+> **New**: This pipeline is now wrapped by a **FastAPI backend** and **React frontend** in `../aviation-safety-app/` for a modern cross-platform dashboard experience.
 
-| Domain      | Source                                       | Size                                    |
-|-------------|----------------------------------------------|-----------------------------------------|
-| Aviation    | NASA ASRS (Hugging Face datasets-server)     | 2,000 reports with expert anomaly labels |
-| Power grid  | NERC Event Analysis reports (public PDFs)    | 12 reports -> ~1,700 narrative chunks   |
+---
 
-## Run everything with one command
+## 🚀 Run Everything with One Command
 
 ```bash
 pip install -r requirements.txt
-python main.py            # fetch -> preprocess -> train -> evaluate -> RAG -> HTML report
+python main.py            # fetch → preprocess → train → evaluate → RAG → HTML report
 ```
 
 Then open `reports/pipeline_report.html` in any browser.
 
-## Web dashboard (Streamlit)
+---
 
-A warm, creamy-light themed interactive dashboard for stakeholders. It loads
-the artifacts produced by `main.py` and adds live RAG predictions.
+## 🌐 Web Dashboards
 
+### Modern React + FastAPI Dashboard (Recommended)
+```bash
+cd ../aviation-safety-app
+./dev.sh                  # Linux/macOS
+./dev.ps1                 # Windows PowerShell
+# or
+docker-compose up --build
+```
+- **Frontend**: http://localhost:5173 (dev) / http://localhost:80 (Docker)
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+
+### Legacy Streamlit Dashboard
 ```bash
 streamlit run app_streamlit.py      # opens http://localhost:8501
 ```
 
-| Tab                  | Content                                                        |
-|----------------------|----------------------------------------------------------------|
-| Overview             | dataset size, domain split, class-distribution chart, sample rows |
-| Model Performance    | metrics, per-class classification table, confusion-matrix & distribution plots |
-| RAG Explorer         | paste an incident -> predicted class + top-3 evidence with similarity bars |
-| Data Assistant       | keyless quality / safety / class insights and risk-phrase scanning |
-| Live Alerts          | alerts raised by the monitor: color-coded table + RAG evidence expanders |
+| Tab | Content |
+|-----|---------|
+| Overview | dataset size, domain split, class-distribution chart, sample rows |
+| Model Performance | metrics, per-class classification table, confusion-matrix & distribution plots |
+| RAG Explorer | paste an incident → predicted class + top-3 evidence with similarity bars |
+| Data Assistant | keyless quality / safety / class insights and risk-phrase scanning |
+| Live Alerts | alerts raised by the monitor: color-coded table + RAG evidence expanders |
+| System Control | manage pipeline/monitor processes, view logs, run pipeline |
 
-Run `python main.py` at least once before starting the dashboard so the
-artifacts exist. The theme can also be tuned in `.streamlit/config.toml`.
+---
 
-## Real-time monitoring & alerting
+## ⚡ Real-Time Monitoring & Alerting
 
-The batch pipeline only reacts when it is run. `src/monitor.py` is a continuous
-service that makes it **proactive**: it ingests new incident reports, classifies
-them on-the-fly, scores their risk level and raises alerts **with RAG evidence**
-from similar past incidents.
+The batch pipeline only reacts when run. `src/monitor.py` makes it **proactive**:
 
 ```bash
 python main.py            # train once so the model exists
 python -m src.monitor     # start the monitor (continuous loop)
 ```
 
-Ingestion sources (all fault-tolerant, all running inside the loop):
+### Ingestion Sources
+| Source | How incidents arrive |
+|--------|---------------------|
+| Drop-in folder | drop a `new_incidents/*.csv` or `*.txt` report (forgiving parser) |
+| Master dataset | rows appended to `data/real_safety_dataset.csv` (baseline on first scan) |
+| NTSB API (CC0) | public US aviation accidents with probable-cause narratives, refreshed daily |
+| UKPN Live Faults | near-real-time UK power cuts; unplanned only, ≥100 customers escalates to high |
 
-| Source               | How incidents arrive                                          |
-|----------------------|---------------------------------------------------------------|
-| Drop-in folder       | drop a `new_incidents/*.csv` or `*.txt` report (forgiving parser) |
-| Master dataset       | rows appended to `data/real_safety_dataset.csv` (baseline on first scan) |
-| NTSB API (CC0)       | public US aviation accidents with probable-cause narratives, refreshed daily |
-| UKPN Live Faults     | near-real-time UK power cuts; unplanned only, >=100 customers escalates to high |
+### Risk Scoring
+- **Critical**: fire, smoke, loss of communication, power outage, crash, emergency, terrain, engine failure...
+- **High**: altitude, runway, weather, wind shear, engine, fuel, outage, storm, arctic...
+- **Medium**: everything else
 
-Risk is scored **critical / high / medium** from trigger phrases (fire, loss of
-communication, power outage, crash, ...) combined with the model label. Alerts
-land in `data/alerts.csv` and appear in the dashboard's **Live Alerts** tab.
-De-duplication state is persisted to `data/monitor_state.json`, so a monitor
-restart never re-alerts on already-processed incidents.
+Alerts land in `data/alerts.csv` and appear in the dashboard's **Live Alerts** tab. De-duplication state persists to `data/monitor_state.json`.
 
 ```bash
 python -m src.monitor --once --no-api   # single scan (CI / demos)
 python main.py --monitor --poll 30      # train, then start monitoring
 ```
 
-Example assistance: a report *"Lost communication with ATC due to severe
-static..."* triggers a CRITICAL alert and the RAG evidence retrieves the 3 most
-similar historical incidents with their outcomes - a head start for operators.
+---
 
-## What the pipeline does
+## 🏗️ Pipeline Architecture
 
 ```
-[1/6] FETCH      Live-download ASRS + NERC, clean, merge by domain -> data/real_safety_dataset.csv
-[2/6] PREPROCESS NLTK tokenize -> stopword removal -> lemmatize (per document)
+data/real_safety_dataset.csv   (NASA ASRS + NERC, ~3,700 domain-tagged reports)
+      |
+[1/6] FETCH      Live-download ASRS + NERC, clean, merge by domain -> CSV
+      |
+[2/6] PREPROCESS NLTK tokenize → stopword removal → lemmatize (per document)
+      |
 [3/6] TRAIN      TF-IDF (bigrams, max_features=5000) + SGD (log-loss) with GridSearchCV
+      |
 [4/6] EVALUATE   classification report + confusion-matrix heatmap + class distribution plot
+      |
 [5/6] RAG        batch explainability: top-3 most similar historical reports per prediction
+      |
 [6/6] REPORT     self-contained HTML report with all results
+      |
+[Web] FASTAPI    REST API wrapping all pipeline functionality
+      |
+[Web] REACT      Cross-platform dashboard (Web + Tauri desktop)
+      |
+[Mon] MONITOR    Real-time incident monitoring & alerting
 ```
 
-All console output is mirrored to `pipeline.log`.
+---
 
-## CLI flags
+## 📋 CLI Flags
 
-| Flag              | Effect                                                        |
-|-------------------|---------------------------------------------------------------|
-| `--force-refresh` | Re-download data even if a cached CSV exists                  |
-| `--no-fetch`      | Skip fetching (requires the cached CSV)                       |
-| `--no-rag`        | Skip the RAG explainability step                              |
-| `--samples N`     | Number of test reports to explain with RAG (default 100)      |
-| `--monitor`       | Start the real-time incident monitor after the pipeline       |
-| `--poll N`        | Monitor poll interval in seconds (default 60)                 |
+| Flag | Effect |
+|------|--------|
+| `--force-refresh` | Re-download data even if a cached CSV exists |
+| `--no-fetch` | Skip fetching (requires the cached CSV) |
+| `--no-rag` | Skip the RAG explainability step |
+| `--samples N` | Number of test reports to explain with RAG (default 100) |
+| `--monitor` | Start the real-time incident monitor after the pipeline |
+| `--poll N` | Monitor poll interval in seconds (default 60) |
 
-## Fault tolerance & idempotency
+---
 
-- If `data/real_safety_dataset.csv` already exists the fetch is **skipped**
-  (idempotent). Delete the CSV or pass `--force-refresh` to re-download.
-- If **one domain's source fails**, the pipeline falls back to the cached rows
-  for that domain, or gracefully skips it with a warning.
-- If **both sources fail**, the cached dataset is reused (if present).
-- Downloaded NERC PDFs are cached in `data/raw/` so re-fetches are fast.
-- Legacy datasets with the old column names (`Narrative`,
-  `human_factors_groundtruth`, `Domain`) are auto-normalised on load.
+## 🛡️ Fault Tolerance & Idempotency
 
-## Configuration
+- If `data/real_safety_dataset.csv` exists → fetch **skipped** (idempotent)
+- One domain fails → falls back to cached rows for that domain
+- Both fail → cached dataset reused (if present)
+- NERC PDFs cached in `data/raw/` → fast re-fetches
+- Legacy column names (`Narrative`, `human_factors_groundtruth`, `Domain`) auto-normalised
 
-Every tunable parameter lives in `config.py`:
+---
 
-- Data: `NROWS_AVIATION`, `TOP_CATEGORIES`, `NERC_PDFS`
-- Modeling: `MAX_FEATURES`, `NGRAM_RANGE`, `TEST_SIZE`, `CV_FOLDS`,
-  `GRID_ALPHAS`, `GRID_CLASS_WEIGHTS`
-- RAG: `RAG_TOP_K`, `RAG_N_SAMPLES`, `RAG_BATCH`
-- Report: `RAG_EXAMPLES_IN_REPORT`, `PLOT_CLASS_TOP_N`
+## ⚙️ Configuration (`config.py`)
 
-## Project structure
+All tunable parameters in one place:
+
+```python
+# Data
+NROWS_AVIATION = 2000
+TOP_CATEGORIES = 15
+NERC_PDFS = [...]  # 12 public NERC PDF URLs
+
+# Modeling
+MAX_FEATURES = 5000
+NGRAM_RANGE = (1, 2)
+TEST_SIZE = 0.2
+CV_FOLDS = 3
+GRID_ALPHAS = [1e-5, 1e-4, 1e-3]
+GRID_CLASS_WEIGHTS = [None, "balanced"]
+
+# RAG
+RAG_TOP_K = 3
+RAG_N_SAMPLES = 100
+RAG_BATCH = 200
+
+# Monitor
+MONITOR_POLL_SECONDS = 60
+NTSB_POLL_SECONDS = 3600
+UKPN_POLL_SECONDS = 60
+ALERT_HIGH_MIN_CUSTOMERS = 100
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 safety_nlp_pipeline/
-├── README.md
-├── requirements.txt
-├── config.py                 all parameters (paths, model settings, ...)
-├── main.py                   single entry point - runs the full pipeline
-├── app_streamlit.py          Streamlit web dashboard (creamy light theme)
+├── README.md                    # This file
+├── requirements.txt             # Python dependencies
+├── config.py                    # All parameters (paths, model settings, ...)
+├── main.py                      # Single entry point - runs the full pipeline
+├── app_streamlit.py             # Legacy Streamlit web dashboard
+├── .streamlit/
+│   └── config.toml              # Dashboard theme configuration
 ├── src/
-│   ├── data_fetcher.py       downloads ASRS (HF) + NERC (PDFs) -> CSV
-│   ├── preprocessor.py       NLTK tokenization, stopwords, lemmatization
-│   ├── trainer.py            TF-IDF + SGD classifier (log-loss) with GridSearchCV
-│   ├── evaluator.py          classification report, confusion matrix, plots
-│   ├── rag_explainer.py      batch + single-query semantic retrieval (cosine)
-│   ├── analyst.py            keyless data quality & safety analysis
-│   ├── monitor.py            real-time incident monitoring & alerting
-│   └── report_generator.py   self-contained HTML report (Jinja2)
-├── new_incidents/            drop-in folder for new CSV/TXT reports
-├── data/                     auto-created; CSV, models, plots
-│   ├── raw/                  cached PDFs
-│   ├── real_safety_dataset.csv
-│   ├── safety_model.pkl
-│   ├── tfidf_vectorizer.pkl
-│   ├── training_config.json
-│   ├── alerts.csv            every raised alert (Live Alerts tab)
-│   ├── monitor_state.json    monitor de-dup state (survives restarts)
-│   └── plots/                confusion matrix, class distribution, ...
-└── reports/                  generated HTML report
-    └── pipeline_report.html
+│   ├── __init__.py
+│   ├── data_fetcher.py          # Downloads ASRS (HF) + NERC (PDFs) -> CSV
+│   ├── preprocessor.py          # NLTK tokenization, stopwords, lemmatization
+│   ├── trainer.py               # TF-IDF + SGD classifier (log-loss) with GridSearchCV
+│   ├── evaluator.py             # Classification report, confusion matrix, plots
+│   ├── rag_explainer.py         # Batch + single-query semantic retrieval (cosine)
+│   ├── analyst.py               # Keyless data quality & safety analysis
+│   ├── monitor.py               # Real-time incident monitoring & alerting
+│   └── report_generator.py      # Self-contained HTML report (Jinja2)
+├── new_incidents/               # Drop-in folder for new CSV/TXT reports
+│   └── README.txt               # Format documentation
+├── data/                        # Auto-created; CSV, models, plots, metrics
+│   ├── raw/                     # Cached NERC PDFs
+│   ├── real_safety_dataset.csv  # Combined dataset (~3,700 reports)
+│   ├── safety_model.pkl         # Trained SGDClassifier
+│   ├── tfidf_vectorizer.pkl     # Fitted TF-IDF vectorizer
+│   ├── training_config.json     # Best hyperparameters
+│   ├── classification_report.txt / .csv
+│   ├── metrics.json             # Accuracy, F1, etc.
+│   ├── alerts.csv               # Every raised alert
+│   ├── monitor_state.json       # Monitor de-dup state (survives restarts)
+│   └── plots/                   # confusion_matrix.png, class_distribution.png
+└── reports/                     # Generated HTML report
+    └── pipeline_report.html     # Self-contained, opens in any browser
 ```
 
-## Expected outcomes
+---
 
-- **~70% weighted F1** overall (aviation anomaly labels are noisy and
-  imbalanced); **power-grid classes are near-perfect** because NERC event
-  names are descriptive.
-- The **RAG evidence** makes every prediction auditable: each report in the
-  report shows the top-3 historical incidents that most influenced the
-  classification, with similarity scores.
-- The **confusion matrix** highlights which classes are commonly confused
-  (e.g. ATC vs Ground in aviation).
+## 📊 Expected Outcomes
 
-## Notes on research gaps
+- **~70% weighted F1** overall (aviation anomaly labels are noisy and imbalanced)
+- **Power-grid classes near-perfect** (NERC event names are descriptive)
+- **RAG evidence** makes every prediction auditable
+- **Confusion matrix** highlights commonly confused classes (e.g., ATC vs Ground)
 
-- **Gap 4 (black-box provenance):** the RAG module explains every prediction
-  by example - an audit trail rendered directly in the HTML report.
-- **Gap 2 (edge deployment):** the TF-IDF + SGD model is tiny compared to LLMs
-  and deploys to constrained devices easily.
-- **Gap 3 (cross-domain taxonomy):** aviation and power-grid narratives share
-  one TF-IDF vocabulary, so the model distinguishes domains while the RAG
-  evidence surfaces genuine cross-domain similarities when they exist.
-- **Gap 1 (physical constraints):** the modular design allows swapping the
-  classifier head for a solver-based constraint verifier.
+---
 
-## First run
+## 🔬 Research Gaps Addressed
 
-The first run auto-downloads the NLTK corpora (stopwords, punkt, wordnet) and
-fetches the live datasets. This may take 2-5 minutes depending on bandwidth.
+| Gap | Solution |
+|-----|----------|
+| **Black-box provenance** | RAG module explains every prediction by example |
+| **Edge deployment** | Lightweight TF-IDF + SGD deploys to constrained devices |
+| **Cross-domain taxonomy** | Shared vocabulary distinguishes domains, surfaces similarities |
+| **Physical constraints** | Modular design allows swapping classifier head |
+
+---
+
+## 📦 Dependencies
+
+```
+pandas>=2.2
+scikit-learn>=1.5
+datasets>=3.0
+joblib>=1.4
+nltk>=3.8
+pypdf>=4.0
+requests>=2.31
+matplotlib>=3.8
+seaborn>=0.13
+jinja2>=3.1
+streamlit>=1.37
+textual>=8.2
+python-docx>=1.1
+```
+
+---
+
+## 🏃 First Run
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+First run auto-downloads NLTK corpora (stopwords, punkt, wordnet) and fetches live datasets (2-5 minutes). Subsequent runs reuse cache. Monitor requires trained model — run `python main.py` first.
+
+---
+
+## 🔗 Related
+
+- **Modern Dashboard**: `../aviation-safety-app/` — React + FastAPI + Tauri
+- **Full Documentation**: `../PROJECT_OVERVIEW.txt` (475 lines)
+- **Legacy TUI**: `../app.py` — Textual terminal interface (preserved)

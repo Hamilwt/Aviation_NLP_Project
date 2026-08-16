@@ -146,8 +146,7 @@ Result priority: triggers → label → vocab → medium.
 2. **Classify**: `explain_text` → predicted label + top-3 RAG evidence.
 3. **Score risk**: `assess_risk` → critical / high / medium.
 4. **Filter**: only **critical** and **high** become alerts; medium is logged as "No alert".
-5. **Persist**: `log_alert` appends one row to `data/alerts.csv`:
-   | Column              | Description                                                         |
+5. **Persist**: `log_alert` appends one row to `data/alerts.csv`:| Column              | Description                                                         |
    | ------------------- | ------------------------------------------------------------------- |
    | `timestamp`       | ISO datetime                                                        |
    | `incident_id`     | stable ID (from source)                                             |

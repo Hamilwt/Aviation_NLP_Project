@@ -1,112 +1,232 @@
-# Safety NLP Pipeline — Terminal UI (menu-driven)
+# Safety NLP Pipeline — Aviation & Power-Grid Incident Analysis
 
-A fully terminal-driven demonstration of a **real** NLP pipeline over real
-safety-incident data, built as an interactive TUI (Textual). Every step runs
-**visually inside the terminal** with live progress bars driven by actual
-work — no browser, no fake animation.
+A production-grade NLP pipeline for classifying safety incident reports from **aviation (NASA ASRS)** and **power-grid (NERC)** domains, with **RAG explainability**, **real-time monitoring**, and a **cross-platform React + FastAPI dashboard**.
 
-```
-  1 · Fetch / Refresh dataset        4 · RAG explainer
-  2 · View datasets                 5 · NLP data assistant
-  3 · Train model                   6 · Pipeline log
-                                      7 · Exit
-```
+---
 
-Press a number to select an option (or `m` to re-open the menu at any
-time). Option 7 quits.
+## 🚀 Quick Start
 
-## Install & run
-
+### Option 1: Docker (Recommended)
 ```bash
+cd aviation-safety-app
+docker-compose up --build
+```
+- **Frontend**: http://localhost:80
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+
+### Option 2: Local Development
+```bash
+# Linux/macOS
+cd aviation-safety-app && ./dev.sh
+
+# Windows PowerShell
+cd aviation-safety-app && ./dev.ps1
+```
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:8000
+
+### Option 3: Desktop App (Tauri)
+```bash
+cd aviation-safety-app/frontend
+npm install
+npm run tauri dev        # Development
+npm run tauri build      # Production binaries
+```
+
+### Option 4: Original Pipeline (Headless)
+```bash
+cd safety_nlp_pipeline
 pip install -r requirements.txt
-python app.py
+python main.py           # Full pipeline -> reports/pipeline_report.html
+streamlit run app_streamlit.py  # Legacy Streamlit dashboard
 ```
 
-Headless CLI (scripting / CI): `python app.py --fetch`, `--train`,
-`--explain <incident text>`.
+---
 
-## What the progress bar is really showing
+## ✨ Features
 
-Every `%` maps to a completed operation — nothing is staged:
+| Feature | Description |
+|---------|-------------|
+| **📊 Overview** | Dataset statistics, domain distribution, class charts |
+| **📈 Model Performance** | Metrics, confusion matrix, per-class classification reports |
+| **🔍 RAG Explorer** | Classify narratives + retrieve similar historical reports as evidence |
+| **🤖 Data Assistant** | Keyless pandas analysis (quality, safety, class balance, risk phrases) |
+| **🚨 Live Alerts** | Real-time incident monitoring with risk scoring (critical/high/medium) |
+| **⚙️ System Control** | Process management, pipeline execution, live logs |
 
-- **Fetch** — advances as ASRS report rows are actually streamed from the
-  datasets-server and as each NERC PDF is downloaded and parsed.
-- **Train (option 3)** — advances per *document* during NLTK
-  preprocessing (`PREPROCESSING 412/2035 (NLTK)`), then per *minibatch*
-  while the SGD/logistic classifier is fitted (`EPOCH 2/3 BATCH 9/21`).
-- **RAG (option 4)** — advances per real cosine-similarity batch
-  (`EMBEDDING + MATCHING 1200/2035`).
+---
 
-## What the fetch step really downloads
-
-The dataset is collected **live from public sources every run** (it is not
-pre-baked into the repo):
-
-| Domain | Source | What is downloaded |
-|--------|--------|--------------------|
-| Aviation | NASA ASRS (via Hugging Face datasets-server) | 2,000 real incident reports, expert anomaly labels from `Events_Anomaly` |
-| Power grid | NERC Event Analysis reports (public PDFs) | 12 real grid-incident post-mortems (Northeast 2003 blackout, Hurricane Sandy, San Fernando disturbance, ...) parsed with pypdf and split into narratives with NLTK sentence tokenization |
-
-Both are merged into `data/real_safety_dataset.csv` with a `Domain` column
-(`Aviation` / `Power Grid`). If a source is unreachable the run falls back
-to the cached copy instead of dying.
-
-## What each option does
-
-1. **Fetch dataset** — live-downloads the two real sources above with real
-   streaming progress, then shows the cleaned, domain-tagged result.
-2. **View datasets** — lists every CSV in `data/` and opens the selected
-   one: raw narrative preview table (with domain) + anomaly-category
-   distribution. Any dataset file you add later appears here automatically.
-3. **Train model** — full NLP training chain with visible real progress:
-   domain preprocessing (NLTK tokenize → stopword removal → lemmatize) →
-   TF-IDF vectorization (bigrams) → stratified train/test split → SGD
-   (log-loss) fitted over shuffled minibatches/epochs with balanced class
-   weights → evaluation, then the complete classification report.
-4. **RAG explainer** — paste a new incident report; the system predicts its
-   risk category (aviation or power-grid) and retrieves the top-3 most
-   similar historical reports as evidence, with similarity bars
-   (`█…` + %) and the domain of each match.
-5. **NLP data assistant** — keyless analyst working on the loaded dataset.
-   Quick buttons: Summary, Quality/issues, Safety/critical, Classes; or
-   type free-form questions:
-   - `quality` / `issues` — what is right and wrong in the data (missing
-     values, duplicate narratives, very short reports, class imbalance,
-     'Other' bucket coverage)
-   - `safety` / `critical` — safety-criticality breakdown, domain split
-     (Aviation vs Power Grid) and the most frequent critical categories
-   - `classes` — class distribution
-   - `analyze <text>` — scans a narrative for high-risk phrases
-6. **Pipeline log** — full console output of every step, live.
-7. **Exit** — close the TUI.
-
-## Why scikit-learn?
-
-The training step (option 3) uses scikit-learn's `TfidfVectorizer`,
-`SGDClassifier` (log-loss — mathematically the same objective as logistic
-regression, but it trains incrementally so the progress bar reflects real
-minibatch fits), `train_test_split` and `classification_report`; the RAG
-step (option 4) uses its `cosine_similarity` for semantic evidence
-retrieval. That is why `scikit-learn` is in `requirements.txt`.
-
-## Project structure
+## 🏗️ Architecture
 
 ```
-app.py               TUI entry point (Textual) + headless CLI
-pipeline/
-  paths.py           data/ layout, live data-source URLs, defaults
-  fetch_data.py      step 1: live-download ASRS + NERC, clean, merge by domain
-  preprocess.py      shared NLTK domain preprocessing
-  train_model.py     step 2: TF-IDF + SGD/Logistic minibatch training
-  rag_explainer.py   step 3: classify + batch semantic evidence retrieval
-  analyst.py         NLP data assistant (quality & safety analysis)
-data/                artifacts (generated; git-ignored)
-requirements.txt     textual · pandas · scikit-learn · datasets · joblib · nltk · pypdf · python-docx
+Aviation_NLP_Project/
+├── aviation-safety-app/           # NEW: React + FastAPI Application
+│   ├── backend/                   # FastAPI REST API
+│   │   ├── main.py               # API endpoints (6 pages + system control)
+│   │   ├── ml_service.py         # ML pipeline wrapper
+│   │   ├── config.py             # Pydantic settings
+│   │   └── schemas.py            # Pydantic models
+│   ├── frontend/                 # React + TypeScript + Vite
+│   │   ├── src/
+│   │   │   ├── pages/            # 6 dashboard pages
+│   │   │   ├── components/       # UI components (Card, Button, Input...)
+│   │   │   ├── hooks/            # Data-fetching hooks
+│   │   │   ├── store/            # Zustand state management
+│   │   │   └── api/              # Axios client
+│   │   ├── src-tauri/            # Tauri desktop app config
+│   │   └── nginx.conf            # Production reverse proxy
+│   ├── docker-compose.yml        # Multi-container deployment
+│   ├── Dockerfile.backend        # Backend container
+│   ├── Dockerfile.frontend       # Frontend container
+│   └── dev.sh / dev.ps1          # Cross-platform dev startup
+│
+├── safety_nlp_pipeline/          # Original Python Pipeline (Preserved)
+│   ├── src/                      # Core pipeline modules
+│   │   ├── data_fetcher.py       # ASRS + NERC data ingestion
+│   │   ├── preprocessor.py       # NLTK preprocessing
+│   │   ├── trainer.py            # TF-IDF + SGD + GridSearchCV
+│   │   ├── evaluator.py          # Metrics, plots, reports
+│   │   ├── rag_explainer.py      # Semantic evidence retrieval
+│   │   ├── analyst.py            # Keyless data assistant
+│   │   ├── monitor.py            # Real-time monitoring & alerting
+│   │   └── report_generator.py   # HTML report generation
+│   ├── main.py                   # Headless CLI entry point
+│   ├── app_streamlit.py          # Legacy Streamlit dashboard
+│   └── config.py                 # All tunable parameters
+│
+└── PROJECT_OVERVIEW.txt          # Complete project documentation
 ```
 
-## Data & artifacts
+---
 
-- Datasets: `data/*.csv` — the Dataset tab (option 2) lists every one.
-- Models: `data/*.pkl` (model + vectorizer) — produced by option 3.
-- Both folders are git-ignored; `data/real_safety_dataset.csv` is the
-  default combined dataset (2000 aviation + ~1700 power-grid narratives).
+## 🔬 Pipeline Details
+
+### Data Sources (Live, Not Pre-baked)
+| Domain | Source | Size |
+|--------|--------|------|
+| **Aviation** | NASA ASRS (Hugging Face datasets-server) | 2,000 reports with expert anomaly labels |
+| **Power Grid** | NERC Event Analysis (public PDFs) | 12 reports → ~1,700 narrative chunks |
+
+### ML Pipeline
+1. **Fetch** → Live download ASRS + NERC, clean, merge by domain
+2. **Preprocess** → NLTK tokenize → stopword removal → lemmatize
+3. **Train** → TF-IDF (bigrams, 5000 features) + SGDClassifier (log-loss) with GridSearchCV
+4. **Evaluate** → Classification report, confusion matrix, class distribution plots
+5. **RAG** → Batch cosine similarity retrieval (top-3 evidence per prediction)
+6. **Report** → Self-contained HTML with all results
+
+### Real-Time Monitoring
+- **Drop-in folder**: `new_incidents/*.csv` or `*.txt`
+- **Master dataset**: Appended rows to `real_safety_dataset.csv`
+- **NTSB API**: Daily US aviation accidents (probable cause)
+- **UKPN Live Faults**: Minute-level UK power cuts (≥100 customers → high risk)
+
+---
+
+## 📚 Documentation
+
+| File | Description |
+|------|-------------|
+| `PROJECT_OVERVIEW.txt` | Complete 475-line project documentation |
+| `aviation-safety-app/README.md` | React/FastAPI app documentation |
+| `safety_nlp_pipeline/README.md` | Original pipeline documentation |
+| `aviation-safety-app/backend/.env.example` | Backend configuration template |
+
+---
+
+## 🛠️ Development
+
+### Adding a New Dashboard Page
+1. Create component in `aviation-safety-app/frontend/src/pages/`
+2. Add route in `aviation-safety-app/frontend/src/App.tsx`
+3. Add navigation item in `Sidebar.tsx`
+
+### Extending the API
+1. Add schemas in `backend/schemas.py`
+2. Add endpoint in `backend/main.py`
+3. Update ML service in `backend/ml_service.py`
+4. Add hook in `frontend/src/hooks/useApi.ts`
+
+### Running Tests
+```bash
+# Backend
+cd aviation-safety-app/backend && python -m pytest
+
+# Frontend
+cd aviation-safety-app/frontend && npm run lint && npm run build
+```
+
+---
+
+## 📦 Requirements
+
+### Root (Pipeline)
+```
+textual>=8.2
+pandas>=2.2
+scikit-learn>=1.5
+datasets>=3.0
+joblib>=1.4
+nltk>=3.8
+python-docx>=1.1
+pypdf>=4.0
+```
+
+### Backend (FastAPI)
+```
+fastapi==0.115.0
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.9.0
+joblib==1.4.2
+pandas==2.2.3
+scikit-learn==1.6.1
+scipy==1.14.1
+requests==2.32.3
+pypdf==5.1.0
+nltk==3.9.1
+prometheus-client==0.21.0
+structlog==25.1.0
+httpx==0.28.1
+websockets==13.1
+```
+
+### Frontend (React)
+```
+react: ^18.3.1
+react-dom: ^18.3.1
+react-router-dom: ^6.26.2
+axios: ^1.7.7
+recharts: ^2.12.7
+lucide-react: ^0.441.0
+zustand: ^5.0.0
+tailwindcss: ^3.4.13
+typescript: ^5.6.2
+vite: ^5.4.8
+@tauri-apps/cli: ^2.0.0
+```
+
+---
+
+## 🎯 Results
+
+- **Dataset**: ~3,700 cleaned reports (2,000 aviation + ~1,700 power-grid)
+- **Model**: ~71% accuracy / ~70% weighted F1 over 28 classes
+- **RAG**: Every prediction auditable with top-3 historical evidence
+- **Cross-domain**: Shared TF-IDF vocabulary surfaces genuine similarities
+
+---
+
+## 📄 License
+
+MIT License — See LICENSE file for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- **NASA ASRS** for aviation incident reports
+- **NERC** for power-grid event analysis reports
+- **Hugging Face** for datasets-server API
+- **UK Power Networks** for live faults open data
