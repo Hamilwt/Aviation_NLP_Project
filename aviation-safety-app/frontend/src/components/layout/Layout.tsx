@@ -17,8 +17,7 @@ export function Layout({ children }: LayoutProps) {
       <Sidebar />
       <div className={cn(
         'flex-1 flex flex-col min-w-0',
-        'lg:ml-64',
-        sidebarOpen ? 'lg:ml-64' : 'lg:ml-0'
+        sidebarOpen ? 'lg:ml-64' : 'lg:ml-0',
       )}>
         <Header />
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">

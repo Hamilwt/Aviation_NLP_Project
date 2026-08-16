@@ -54,6 +54,24 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+# Column aliases for dataset normalization (matching safety_nlp_pipeline/config.py)
+COLUMN_ALIASES = {
+    "Report 1_Narrative": "narrative",
+    "Events_Anomaly": "label",
+    "Narrative": "narrative",
+    "human_factors_groundtruth": "label",
+    "Domain": "domain",
+    "narrative": "narrative",
+    "label": "label",
+    "domain": "domain",
+}
+
+# Canonical column names
+NARRATIVE_COL = "narrative"
+LABEL_COL = "label"
+DOMAIN_COL = "domain"
+PROCESSED_COL = "processed_text"
+
 # Create directories
 for d in (settings.DATA_DIR, settings.RAW_DIR, settings.PLOTS_DIR, 
           settings.REPORTS_DIR, settings.WATCH_DIR):

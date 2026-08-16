@@ -9,8 +9,8 @@ export function Header() {
     <header className={cn(
       'sticky top-0 z-30',
       'bg-white/80 backdrop-blur-sm border-b border-cream-300',
-      'lg:ml-64',
-      'transition-all duration-300'
+      'transition-all duration-300',
+      sidebarOpen ? 'lg:ml-64' : 'lg:ml-0',
     )}>
       <div className="flex items-center justify-between h-16 px-4 sm:px-6">
         <div className="flex items-center gap-4">

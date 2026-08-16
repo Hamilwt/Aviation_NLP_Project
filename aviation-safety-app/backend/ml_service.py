@@ -20,15 +20,9 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 
-from config import settings
+from config import settings, COLUMN_ALIASES, NARRATIVE_COL, LABEL_COL, DOMAIN_COL, PROCESSED_COL
 
 logger = logging.getLogger(__name__)
-
-# Column names
-NARRATIVE_COL = "narrative"
-LABEL_COL = "label"
-DOMAIN_COL = "domain"
-PROCESSED_COL = "processed_text"
 
 # Risk keywords (from analyst.py)
 CRITICAL_KEYWORDS = [
@@ -109,6 +103,12 @@ class MLService:
             
             logger.info("Loading dataset...")
             self._df = pd.read_csv(settings.DATASET_PATH)
+            
+            # Normalize column names using aliases
+            self._df = self._df.rename(columns=COLUMN_ALIASES)
+            # Keep only canonical columns if they exist
+            canonical_cols = [c for c in [NARRATIVE_COL, LABEL_COL, DOMAIN_COL] if c in self._df.columns]
+            self._df = self._df[canonical_cols].copy()
             
             logger.info("Loading model and vectorizer...")
             self._model = joblib.load(settings.MODEL_PATH)
