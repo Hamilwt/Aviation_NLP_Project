@@ -10,12 +10,10 @@ Overview, Model Performance, RAG Explorer, Data Assistant, Live Alerts
 (raised by ``python -m src.monitor``), and System Control (process management).
 """
 import json
-import os
 import queue
 import subprocess
 import sys
 import threading
-import time
 from pathlib import Path
 
 import joblib
@@ -71,21 +69,13 @@ class ProcessManager:
     SERVICES = {
         "pipeline": {
             "cmd": [sys.executable, "main.py"],
-            "label": "Pipeline (main.py)",
-            "icon": "������",
-            "color": "#D4A574",
+            "label": "Pipeline",
+            "desc": "Full pipeline: fetch → preprocess → train → evaluate → RAG → report",
         },
         "monitor": {
             "cmd": [sys.executable, "-m", "src.monitor"],
-            "label": "Monitor (src.monitor)",
-            "icon": "����",
-            "color": "#74B3D4",
-        },
-        "dashboard": {
-            "cmd": [sys.executable, "-m", "streamlit", "run", "app_streamlit.py", "--server.port", "8502"],
-            "label": "Dashboard (port 8502)",
-            "icon": "�������",
-            "color": "#A8D474",
+            "label": "Monitor",
+            "desc": "Real-time incident ingestion, classification, risk scoring & alerting",
         },
     }
     
@@ -209,13 +199,11 @@ if "proc_mgr" not in st.session_state:
     st.session_state.proc_mgr = ProcessManager()
 if "log_buffer" not in st.session_state:
     st.session_state.log_buffer = {name: [] for name in ProcessManager.SERVICES}
-if "auto_refresh" not in st.session_state:
-    st.session_state.auto_refresh = True
 
 proc_mgr = st.session_state.proc_mgr
 
 st.title(":shield: Safety NLP Pipeline - Dashboard")
-st.caption("Aviation & Power-Grid incident analysis &middot; TF-IDF + SGD &middot; RAG explainability")
+st.caption("Aviation & Power-Grid incident analysis · TF-IDF + SGD · RAG explainability")
 
 
 # ------------------------------------------------------------------ loading
@@ -467,22 +455,14 @@ with tab5:
 
 # ------------------------------------------------------ 6 · System Control
 with tab6:
-    st.subheader("System Control - unified process management")
-    st.caption("Start/stop the pipeline, monitor, and dashboard from one place. "
-               "Logs stream in real-time below.")
+    st.subheader("System Control")
+    st.caption("Manage the pipeline and monitor processes. Logs update on demand.")
     
-    # Auto-refresh toggle
-    col_refresh, col_clear = st.columns([3, 1])
-    # Disable auto-refresh during AppTest to avoid timeout
-    is_testing = os.environ.get("STREAMLIT_TESTING") == "1"
-    st.session_state.auto_refresh = col_refresh.checkbox(
-        "Auto-refresh logs (every 2s)", value=st.session_state.auto_refresh, disabled=is_testing)
-    if is_testing:
-        st.session_state.auto_refresh = False
-    if col_clear.button("Clear all logs"):
-        for name in st.session_state.log_buffer:
-            st.session_state.log_buffer[name] = []
+    # Refresh logs button (manual only - no auto-refresh)
+    if st.button("Refresh Logs", type="secondary", use_container_width=False):
         st.rerun()
+    
+    st.divider()
     
     # Service status overview
     status = proc_mgr.get_all_status()
@@ -493,20 +473,20 @@ with tab6:
     for name, info in ProcessManager.SERVICES.items():
         running = status[name]
         label = info["label"]
-        color = info["color"]
+        desc = info["desc"]
         
         scol1, scol2, scol3, scol4 = st.columns([2, 1, 1, 4])
         
         with scol1:
-            # Status indicator
             status_color = "#2ECC71" if running else "#E74C3C"
             status_text = "RUNNING" if running else "STOPPED"
             st.markdown(
                 f"""
-                <div style="background:{color};padding:8px;border-radius:6px;margin-bottom:4px;">
-                    <span style="color:white;font-weight:bold;">{info['icon']} {label}</span>
+                <div style="padding:8px;border-radius:6px;margin-bottom:4px;border:1px solid #D9C5B2;background:#FFFDF9;">
+                    <div style="font-weight:600;color:#5C4033;">{label}</div>
+                    <div style="font-size:0.85em;color:#8B7355;">{desc}</div>
                 </div>
-                <div style="background:{status_color};padding:4px;border-radius:4px;text-align:center;font-size:0.85em;">
+                <div style="background:{status_color};padding:4px;border-radius:4px;text-align:center;font-size:0.85em;color:white;">
                     {status_text}
                 </div>
                 """,
@@ -515,54 +495,47 @@ with tab6:
         
         with scol2:
             if not running:
-                if st.button(f"Start", key=f"start_{name}", use_container_width=True):
+                if st.button("Start", key=f"start_{name}", use_container_width=True):
                     ok, msg = proc_mgr.start(name)
                     if ok:
-                        st.success(msg)
+                        st.toast(msg, icon="���")
                     else:
-                        st.error(msg)
+                        st.toast(msg, icon="���")
                     st.rerun()
         
         with scol3:
             if running:
-                if st.button(f"Stop", key=f"stop_{name}", use_container_width=True, type="secondary"):
+                if st.button("Stop", key=f"stop_{name}", use_container_width=True):
                     ok, msg = proc_mgr.stop(name)
                     if ok:
-                        st.success(msg)
+                        st.toast(msg, icon="���")
                     else:
-                        st.error(msg)
+                        st.toast(msg, icon="���")
                     st.rerun()
     
     # Master controls
     st.divider()
-    mcol1, mcol2, mcol3 = st.columns(3)
+    mcol1, mcol2 = st.columns(2)
     any_running = any(status.values())
     all_running = all(status.values())
     
     with mcol1:
-        if st.button("���� Start ALL", use_container_width=True, type="primary", disabled=all_running):
+        if st.button("Start ALL", use_container_width=True, type="primary", disabled=all_running):
             for name in ProcessManager.SERVICES:
                 if not status[name]:
                     proc_mgr.start(name)
             st.rerun()
     with mcol2:
-        if st.button("���� Stop ALL", use_container_width=True, type="secondary", disabled=not any_running):
+        if st.button("Stop ALL", use_container_width=True, disabled=not any_running):
             proc_mgr.stop_all()
-            st.rerun()
-    with mcol3:
-        if st.button("���� Restart ALL", use_container_width=True):
-            proc_mgr.stop_all()
-            time.sleep(1)
-            for name in ProcessManager.SERVICES:
-                proc_mgr.start(name)
             st.rerun()
     
-    # Real-time logs
+    # Logs section
     st.divider()
-    st.write("**Real-time Logs**")
+    st.write("**Process Logs**")
     
     # Log tabs for each service
-    log_tabs = st.tabs([f"{info['icon']} {info['label']}" for info in ProcessManager.SERVICES.values()])
+    log_tabs = st.tabs([f"{info['label']}" for info in ProcessManager.SERVICES.values()])
     
     for i, (name, info) in enumerate(ProcessManager.SERVICES.items()):
         with log_tabs[i]:
@@ -577,14 +550,8 @@ with tab6:
                 st.session_state.log_buffer[name] = st.session_state.log_buffer[name][-500:]
             
             # Display logs
-            log_placeholder = st.empty()
             if st.session_state.log_buffer[name]:
                 log_text = "\n".join(st.session_state.log_buffer[name])
-                log_placeholder.code(log_text, language="text")
+                st.code(log_text, language="text")
             else:
-                log_placeholder.info(f"No logs yet for {info['label']}. Start the service to see output.")
-    
-    # Auto-refresh logic
-    if st.session_state.auto_refresh:
-        time.sleep(2)
-        st.rerun()
+                st.info(f"No logs yet for {info['label']}. Start the service to see output.")
