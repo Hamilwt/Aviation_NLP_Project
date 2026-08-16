@@ -104,6 +104,11 @@ class ApiClient {
   async controlMonitor(action: 'start' | 'stop' | 'restart', pollSeconds = 60, enableApi = true) {
     return this.client.post('/monitor/control', { action, poll_seconds: pollSeconds, enable_api: enableApi });
   }
+
+  // ML Artifacts
+  async loadMLArtifacts() {
+    return this.client.post('/ml/load-artifacts');
+  }
 }
 
 export const api = new ApiClient();

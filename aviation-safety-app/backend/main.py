@@ -218,6 +218,32 @@ async def health_check():
         monitor_running=proc_mgr.is_running("monitor"),
     )
 
+# Load ML Artifacts endpoint
+class LoadArtifactsResponse(BaseModel):
+    success: bool
+    message: str
+    model_loaded: bool
+    data_loaded: bool
+
+@app.post("/api/ml/load-artifacts", response_model=LoadArtifactsResponse)
+async def load_ml_artifacts():
+    """Manually load ML artifacts (model, vectorizer, dataset, RAG index)"""
+    try:
+        success = ml_service.load_artifacts()
+        return LoadArtifactsResponse(
+            success=success,
+            message="ML artifacts loaded successfully" if success else "Failed to load ML artifacts - check if pipeline has been run",
+            model_loaded=ml_service._model is not None,
+            data_loaded=ml_service._df is not None,
+        )
+    except Exception as e:
+        return LoadArtifactsResponse(
+            success=False,
+            message=f"Error loading artifacts: {str(e)}",
+            model_loaded=False,
+            data_loaded=False,
+        )
+
 
 # ============================================================
 # DATASET OVERVIEW

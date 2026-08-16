@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useSystemStatus, useServiceControl, usePipeline } from '@/hooks/useApi';
+import { useSystemStatus, useServiceControl, usePipeline, useLoadMLArtifacts } from '@/hooks/useApi';
 import { Section, Card, CardHeader, Button, Badge, ProgressBar } from '@/components/ui';
-import { Loader2, Play, Square, Zap, AlertTriangle, CheckCircle, XCircle, RefreshCw, RotateCcw, Download, Database, Bell } from 'lucide-react';
+import { Loader2, Play, Square, Zap, AlertTriangle, CheckCircle, XCircle, RefreshCw, RotateCcw, Download, Database, Bell, Brain } from 'lucide-react';
 import { cn } from '@/utils/helpers';
 
 export function SystemPage() {
   const { data, loading, error, refetch } = useSystemStatus();
   const { controlService, controlAll, loading: controlLoading } = useServiceControl();
   const { runPipeline, loading: pipelineLoading } = usePipeline();
+  const { loadArtifacts, loading: loadArtifactsLoading } = useLoadMLArtifacts();
   const [pipelineOptions, setPipelineOptions] = useState({
     force_refresh: false,
     no_fetch: false,
@@ -114,6 +115,9 @@ export function SystemPage() {
     }
   };
 
+  const mlServiceLoaded = data?.model_loaded ?? false;
+  const dataLoaded = data?.data_loaded ?? false;
+
   return (
     <div className="space-y-6">
       <Section
@@ -202,6 +206,60 @@ export function SystemPage() {
                   <Square className="w-4 h-4" />
                   Stop ALL
                 </Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader 
+              title="ML Artifacts" 
+              subtitle="Load model, vectorizer, dataset, and RAG index into memory"
+              action={
+                <Button 
+                  onClick={loadArtifacts} 
+                  loading={loadArtifactsLoading}
+                  disabled={loadArtifactsLoading}
+                >
+                  <Brain className="w-4 h-4" />
+                  Load Artifacts
+                </Button>
+              }
+            />
+            <div className="space-y-3">
+              <div className="p-4 bg-cream-100 rounded-lg border border-cream-300">
+                <h5 className="font-medium text-brown-800 mb-2">What this does</h5>
+                <ul className="text-sm text-brown-600 space-y-1 list-disc list-inside">
+                  <li>Loads the trained model (<code className="font-mono">safety_model.pkl</code>)</li>
+                  <li>Loads the TF-IDF vectorizer (<code className="font-mono">tfidf_vectorizer.pkl</code>)</li>
+                  <li>Loads the dataset (<code className="font-mono">real_safety_dataset.csv</code>)</li>
+                  <li>Builds the RAG retrieval index for evidence retrieval</li>
+                </ul>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="p-3 rounded-lg border" style={{ backgroundColor: mlServiceLoaded ? '#dcfce7' : '#fef2f2', borderColor: mlServiceLoaded ? '#86efac' : '#fecaca' }}>
+                  <div className="flex items-center gap-2">
+                    {mlServiceLoaded ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-red-600" />
+                    )}
+                    <span className="font-medium" style={{ color: mlServiceLoaded ? '#166534' : '#991b1b' }}>
+                      Model: {mlServiceLoaded ? 'Loaded' : 'Not Loaded'}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg border" style={{ backgroundColor: dataLoaded ? '#dcfce7' : '#fef2f2', borderColor: dataLoaded ? '#86efac' : '#fecaca' }}>
+                  <div className="flex items-center gap-2">
+                    {dataLoaded ? (
+                      <CheckCircle className="w-4 h-4 text-green-600" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-red-600" />
+                    )}
+                    <span className="font-medium" style={{ color: dataLoaded ? '#166534' : '#991b1b' }}>
+                      Data: {dataLoaded ? 'Loaded' : 'Not Loaded'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </Card>

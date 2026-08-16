@@ -191,6 +191,13 @@ class HealthResponse(BaseModel):
     monitor_running: bool
 
 
+class LoadArtifactsResponse(BaseModel):
+    success: bool
+    message: str
+    model_loaded: bool
+    data_loaded: bool
+
+
 class FetchResult(BaseModel):
     success: bool
     message: str

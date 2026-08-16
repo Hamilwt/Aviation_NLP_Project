@@ -310,3 +310,28 @@ export function useMonitorControl() {
 
   return { controlMonitor, loading };
 }
+
+export function useLoadMLArtifacts() {
+  const [loading, setLoading] = useState(false);
+  const { addNotification } = useUIStore();
+
+  const loadArtifacts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.loadMLArtifacts();
+      addNotification({ 
+        type: response.data.success ? 'success' : 'error', 
+        message: response.data.message 
+      });
+      return response.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load ML artifacts';
+      addNotification({ type: 'error', message });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [addNotification]);
+
+  return { loadArtifacts, loading };
+}
