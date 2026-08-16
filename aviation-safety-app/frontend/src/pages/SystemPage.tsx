@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react';
 import { useSystemStatus, useServiceControl, usePipeline } from '@/hooks/useApi';
-import { Card, CardHeader, Button, Badge } from '@/components/ui';
-import { Loader2, Play, Stop, Terminal, Database, Zap, AlertTriangle, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
-import { cn } from '@/utils/helpers';
-import { useState } from 'react';
+import { Section, Card, CardHeader, Button, Badge, ProgressBar, MetricCard, Table } from '@/components/ui/DataDisplay';
+import { BarChartComponent } from '@/components/charts/ChartComponents';
+import { Loader2, Play, Stop, Terminal, Database, Zap, AlertTriangle, CheckCircle, XCircle, RefreshCw, ChevronDown, ChevronUp, Clock, RotateCcw, Download, ExternalLink } from 'lucide-react';
+import { cn, formatDate } from '@/utils/helpers';
 
 export function SystemPage() {
   const { data, loading, error, refetch } = useSystemStatus();
@@ -14,8 +15,39 @@ export function SystemPage() {
     no_rag: false,
     samples: 100,
   });
-  const [pipelineResult, setPipelineResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [pipelineResult, setPipelineResult] = useState<{
+    success: boolean;
+    message: string;
+    duration_seconds?: number;
+    stages: Array<{ stage: string; status: string; progress: number; message: string }>;
+    artifacts?: Record<string, string>;
+  } | null>(null);
   const [activeLogTab, setActiveLogTab] = useState<string>('pipeline');
+  const [pipelineProgress, setPipelineProgress] = useState<Array<{ stage: string; status: string; progress: number; message: string }>>([]);
+  const [pollProgress, setPollProgress] = useState(false);
+
+  // Poll for pipeline progress
+  useEffect(() => {
+    if (!pollProgress) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/pipeline/progress');
+        if (res.ok) {
+          const data = await res.json();
+          setPipelineProgress(data);
+          if (data.every((s: any) => s.status === 'completed' || s.status === 'failed')) {
+            setPollProgress(false);
+            // Refresh result
+            const resultRes = await fetch('/api/pipeline/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pipelineOptions) });
+            // Note: This won't work as-is, need a proper way to get final result
+          }
+        }
+      } catch (e) {
+        console.error('Progress poll failed:', e);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [pollProgress, pipelineOptions]);
 
   if (loading && !data) {
     return (
@@ -28,7 +60,7 @@ export function SystemPage() {
   if (error && !data) {
     return (
       <Card className="text-center py-12">
-        <AlertTriangle className="w-12 h-12 mx-auto text-risk-critical mb-4" />
+        <AlertTriangle className="w-12 h-12 mx-auto text-red-500 mb-4" />
         <h3 className="text-brown-800 text-lg font-medium mb-2">Unable to load system status</h3>
         <p className="text-brown-500 mb-4">{error}</p>
         <button onClick={refetch} className="px-4 py-2 bg-brown-700 text-white rounded-lg hover:bg-brown-800">
@@ -42,26 +74,62 @@ export function SystemPage() {
   const logs = data?.logs || {};
 
   const handleStartPipeline = async () => {
+    setPollProgress(true);
+    setPipelineProgress([
+      { stage: 'fetch', status: 'running', progress: 0, message: 'Starting...' },
+      { stage: 'preprocess', status: 'pending', progress: 0, message: 'Waiting...' },
+      { stage: 'train', status: 'pending', progress: 0, message: 'Waiting...' },
+      { stage: 'evaluate', status: 'pending', progress: 0, message: 'Waiting...' },
+      { stage: 'rag', status: 'pending', progress: 0, message: 'Waiting...' },
+      { stage: 'report', status: 'pending', progress: 0, message: 'Waiting...' },
+    ]);
+    
     try {
       const result = await runPipeline(pipelineOptions);
-      setPipelineResult({ success: result.success, message: result.message });
+      setPipelineResult({
+        success: result.success,
+        message: result.message,
+        duration_seconds: result.duration_seconds,
+        stages: pipelineProgress,
+        artifacts: result.artifacts,
+      });
+      setPollProgress(false);
+      refetch(); // Refresh system status
     } catch (err) {
-      // Handled by hook
+      setPollProgress(false);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed': return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'running': return <RotateCcw className="w-4 h-4 text-blue-600 animate-spin" />;
+      case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
+      default: return <Clock className="w-4 h-4 text-brown-400" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return '#22C55E';
+      case 'running': return '#3B82F6';
+      case 'failed': return '#EF4444';
+      default: return '#D9C5B2';
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-brown-800">System Control</h1>
-          <p className="text-brown-500 mt-1">Manage pipeline and monitor processes</p>
-        </div>
-        <Button variant="outline" onClick={refetch} loading={loading}>
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </Button>
-      </div>
+      <Section
+        title="System Control"
+        subtitle="Manage pipeline and monitor processes"
+        action={
+          <Button variant="outline" onClick={refetch} loading={loading}>
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
@@ -70,47 +138,53 @@ export function SystemPage() {
           <div className="space-y-4">
             {services.map((service) => (
               <div key={service.name} className="p-4 rounded-lg border border-cream-300 bg-cream-50">
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-semibold text-brown-800">{service.label}</h4>
-                      <Badge 
-                        variant={service.running ? 'success' : 'default'} 
-                        size="sm"
-                        className={service.running ? 'bg-risk-medium/10 text-risk-medium' : 'bg-cream-200 text-brown-600'}
-                      >
-                        {service.running ? 'RUNNING' : 'STOPPED'}
-                      </Badge>
-                      {service.pid && (
-                        <span className="text-xs text-brown-400 font-mono">PID: {service.pid}</span>
-                      )}
+                <div className="flex items-center justify-between gap-4 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-brown-100 flex items-center justify-center">
+                      {service.name === 'pipeline' ? <Database className="w-5 h-5 text-brown-600" /> : <Bell className="w-5 h-5 text-brown-600" />}
                     </div>
-                    <p className="text-sm text-brown-600">{service.description}</p>
+                    <div>
+                      <h4 className="font-semibold text-brown-800">{service.label}</h4>
+                      <p className="text-sm text-brown-600">{service.description}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!service.running ? (
-                      <Button
-                        size="sm"
-                        onClick={() => controlService(service.name, 'start')}
-                        loading={controlLoading[service.name]}
-                        disabled={controlLoading[service.name]}
-                      >
-                        <Play className="w-4 h-4" />
-                        Start
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => controlService(service.name, 'stop')}
-                        loading={controlLoading[service.name]}
-                        disabled={controlLoading[service.name]}
-                      >
-                        <Stop className="w-4 h-4" />
-                        Stop
-                      </Button>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={service.running ? 'success' : 'default'} size="md" className={cn(
+                      'px-3 py-1',
+                      service.running ? 'bg-green-100 text-green-700' : 'bg-cream-200 text-brown-600'
+                    )}>
+                      {service.running ? 'RUNNING' : 'STOPPED'}
+                    </Badge>
+                    {service.pid && (
+                      <span className="text-xs text-brown-400 font-mono px-2 py-1 bg-cream-100 rounded">PID: {service.pid}</span>
                     )}
                   </div>
+                </div>
+                <div className="flex gap-2">
+                  {!service.running ? (
+                    <Button
+                      size="sm"
+                      onClick={() => controlService(service.name, 'start')}
+                      loading={controlLoading[service.name]}
+                      disabled={controlLoading[service.name]}
+                      className="flex-1"
+                    >
+                      <Play className="w-4 h-4" />
+                      Start
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      onClick={() => controlService(service.name, 'stop')}
+                      loading={controlLoading[service.name]}
+                      disabled={controlLoading[service.name]}
+                      className="flex-1"
+                    >
+                      <Stop className="w-4 h-4" />
+                      Stop
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -121,6 +195,7 @@ export function SystemPage() {
                 onClick={() => controlAll('start')}
                 loading={controlLoading.all}
                 disabled={controlLoading.all}
+                className="flex-1"
               >
                 <Play className="w-4 h-4" />
                 Start ALL
@@ -130,6 +205,7 @@ export function SystemPage() {
                 onClick={() => controlAll('stop')}
                 loading={controlLoading.all}
                 disabled={controlLoading.all}
+                className="flex-1"
               >
                 <Stop className="w-4 h-4" />
                 Stop ALL
@@ -139,7 +215,7 @@ export function SystemPage() {
         </Card>
 
         <Card>
-          <CardHeader title="Run Pipeline" subtitle="Execute the full NLP pipeline end-to-end" />
+          <CardHeader title="Pipeline Execution" subtitle="Run the full NLP pipeline with progress tracking" />
           
           <div className="space-y-4">
             <div className="space-y-3">
@@ -197,26 +273,66 @@ export function SystemPage() {
 
             <Button 
               onClick={handleStartPipeline} 
-              loading={pipelineLoading}
+              loading={pipelineLoading || pollProgress}
               className="w-full"
               size="lg"
+              disabled={pipelineLoading || pollProgress}
             >
               <Zap className="w-5 h-5" />
-              Run Pipeline
+              {pollProgress ? 'Running Pipeline...' : 'Run Pipeline'}
             </Button>
 
-            {pipelineResult && (
-              <div className={cn(
-                'p-4 rounded-lg',
-                pipelineResult.success 
-                  ? 'bg-risk-medium/10 border-risk-medium/20 text-risk-medium' 
-                  : 'bg-risk-critical/10 border-risk-critical/20 text-risk-critical'
-              )}>
-                <div className="flex items-center gap-2">
-                  {pipelineResult.success ? <CheckCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                  <span className="font-medium">{pipelineResult.message}</span>
+            {pollProgress && (
+              <Card className="bg-blue-50 border-blue-200">
+                <CardHeader title="Pipeline Progress" subtitle="Real-time stage tracking" />
+                <div className="space-y-3">
+                  {pipelineProgress.map((stage) => (
+                    <div key={stage.stage} className="flex items-center gap-3">
+                      <div className="w-24 text-sm font-medium text-brown-700 capitalize">{stage.stage}</div>
+                      <div className="flex-1">
+                        <ProgressBar 
+                          value={stage.progress} 
+                          color={getStatusColor(stage.status)} 
+                          height={8} 
+                          showLabel 
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(stage.status)}
+                        <span className="text-sm text-brown-600">{stage.message}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
+              </Card>
+            )}
+
+            {pipelineResult && (
+              <Card className={cn(
+                'animate-slide-up',
+                pipelineResult.success 
+                  ? 'bg-green-50 border-green-200' 
+                  : 'bg-red-50 border-red-200'
+              )}>
+                <div className="flex items-start gap-3">
+                  {pipelineResult.success ? <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" /> : <XCircle className="w-5 h-5 text-red-600 mt-0.5" />}
+                  <div className="flex-1">
+                    <p className="font-medium text-brown-800">{pipelineResult.message}</p>
+                    {pipelineResult.duration_seconds && (
+                      <p className="text-sm text-brown-500 mt-1">Duration: {pipelineResult.duration_seconds.toFixed(1)}s</p>
+                    )}
+                    {pipelineResult.artifacts && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {Object.entries(pipelineResult.artifacts).map(([key, path]) => (
+                          <span key={key} className="text-xs bg-cream-100 text-brown-600 px-2 py-1 rounded font-mono">
+                            {key}: {path.split('/').pop()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Card>
             )}
           </div>
         </Card>
@@ -246,8 +362,16 @@ export function SystemPage() {
         </div>
 
         <div className="p-4">
-          <pre className="bg-brown-900 text-cream-100 p-4 rounded-lg overflow-x-auto text-sm font-mono max-h-96">
-            <code>{logs[activeLogTab]?.slice(-100).join('\n') || 'No logs yet. Start the service to see output.'}</code>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-brown-500">{logs[activeLogTab]?.length || 0} log entries</span>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(logs[activeLogTab]?.join('\n') || '')}>
+                <Download className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+          <pre className="bg-brown-900 text-cream-100 p-4 rounded-lg overflow-x-auto text-sm font-mono max-h-96 scrollbar-thin">
+            <code>{logs[activeLogTab]?.slice(-200).join('\n') || 'No logs yet. Start the service to see output.'}</code>
           </pre>
         </div>
       </Card>

@@ -1,92 +1,87 @@
-# Safety NLP Pipeline - React + FastAPI Application
+# Safety NLP Pipeline - Web Dashboard
 
-A cross-platform safety incident analysis application for aviation and power-grid domains, featuring TF-IDF + SGD classification with RAG explainability.
+A modern, cross-platform React + FastAPI dashboard for the Aviation & Power-Grid Safety NLP Pipeline. Full web-based control of all NLP processes with rich visualizations.
 
-## Architecture
+## ✨ Features
 
-```
-aviation-safety-app/
-├── backend/                 # FastAPI backend
-│   ├── main.py             # FastAPI application with REST API
-│   ├── config.py           # Configuration management
-│   ├── schemas.py          # Pydantic models
-│   ├── ml_service.py       # ML pipeline wrapper
-│   └── requirements.txt    # Python dependencies
-├── frontend/               # React + TypeScript frontend
-│   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── pages/          # Page components
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── store/          # Zustand state management
-│   │   ├── api/            # API client
-│   │   ├── types/          # TypeScript types
-│   │   └── utils/          # Utility functions
-│   ├── src-tauri/          # Tauri desktop app config
-│   └── package.json
-├── Dockerfile.backend      # Backend Docker image
-├── Dockerfile.frontend     # Frontend Docker image
-└── docker-compose.yml      # Multi-container orchestration
-```
+| Page | Description |
+|------|-------------|
+| **Overview** | Dataset statistics, domain distribution, class charts with interactive visualizations |
+| **Model Performance** | Metrics, confusion matrix, per-class reports with bar charts and progress bars |
+| **RAG Explorer** | Classify narratives + retrieve similar historical reports as evidence |
+| **Data Assistant** | Keyless pandas analysis (quality, safety, class balance, risk phrases) |
+| **Live Alerts** | Real-time incident monitoring with risk scoring, filters, and evidence |
+| **System Control** | Process management, pipeline execution with real-time progress tracking |
 
-## Features
+## 🚀 Quick Start
 
-- **Overview**: Dataset statistics and domain distribution
-- **Model Performance**: Classification metrics, confusion matrix, per-class reports
-- **RAG Explorer**: Classify narratives with evidence retrieval
-- **Data Assistant**: Keyless pandas-based data analysis
-- **Live Alerts**: Real-time incident monitoring dashboard
-- **System Control**: Process management for pipeline and monitor
+### Prerequisites
+- Python 3.11+
+- Node.js 20+
+- Run the original pipeline first to generate artifacts:
+  ```bash
+  cd ../safety_nlp_pipeline
+  pip install -r requirements.txt
+  python main.py
+  ```
 
-## Quick Start
-
-### Option 1: Docker (Recommended)
-
+### Development Mode
 ```bash
-cd aviation-safety-app
-docker-compose up --build
-```
-
-Access the app at http://localhost:80
-
-### Option 2: Local Development
-
-#### Backend
-```bash
-cd aviation-safety-app/backend
+# Terminal 1 - Backend
+cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Download NLTK data
 python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab')"
-
-# Run the API server
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
 
-#### Frontend
-```bash
-cd aviation-safety-app/frontend
+# Terminal 2 - Frontend
+cd frontend
 npm install
 npm run dev
 ```
 
-Access the app at http://localhost:5173
+- **Frontend**: http://localhost:5173
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-### Option 3: Desktop App (Tauri)
-
+### Production Build
 ```bash
-cd aviation-safety-app/frontend
-npm install
-npm run tauri dev
+cd frontend
+npm run build
+# Serve dist/ with nginx or any static server
 ```
 
-Build for distribution:
-```bash
-npm run tauri build
+## 🏗️ Architecture
+
+```
+aviation-safety-app/
+├── backend/                   # FastAPI REST API
+│   ├── main.py               # API endpoints (all 6 pages + system control)
+│   ├── ml_service.py         # ML pipeline wrapper with progress tracking
+│   ├── config.py             # Pydantic settings
+│   ├── schemas.py            # Pydantic models (request/response)
+│   └── requirements.txt      # Python dependencies
+├── frontend/                 # React + TypeScript + Vite
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── charts/       # Recharts components (Bar, Pie, Line, Progress)
+│   │   │   ├── layout/       # Sidebar, Header, Layout
+│   │   │   └── ui/           # Card, Button, Input, Table, Badge, MetricCard
+│   │   ├── pages/            # 6 dashboard pages
+│   │   ├── hooks/            # Custom React hooks (useApi)
+│   │   ├── store/            # Zustand state management
+│   │   ├── api/              # Axios client
+│   │   ├── types/            # TypeScript types
+│   │   └── utils/            # Helpers
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   └── tsconfig.json
+└── README.md
 ```
 
-## API Endpoints
+## 🔌 API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -95,72 +90,107 @@ npm run tauri build
 | GET | `/api/model-performance` | Model metrics & reports |
 | POST | `/api/classify` | Classify narrative with RAG evidence |
 | POST | `/api/analyze` | Data assistant queries |
-| GET | `/api/alerts` | Live alerts |
+| GET | `/api/alerts` | Live alerts with filters |
 | GET | `/api/system/status` | Service status & logs |
-| POST | `/api/system/control/{service}` | Start/stop services |
-| POST | `/api/pipeline/run` | Execute full pipeline |
+| POST | `/api/system/control/{service}/{action}` | Start/stop/restart services |
+| POST | `/api/pipeline/run` | Execute full pipeline with progress |
+| GET | `/api/pipeline/progress` | Get pipeline stage progress |
+| POST | `/api/pipeline/fetch` | Fetch data only |
+| POST | `/api/pipeline/train` | Train model only |
+| POST | `/api/monitor/control` | Monitor control |
 
-## Configuration
+## 🎨 Visualization Components
 
-Environment variables (backend/.env):
+### ChartComponents.tsx
+- **BarChartComponent** - Horizontal/vertical bar charts with labels
+- **PieChartComponent** - Donut charts with percentages
+- **LineChartComponent** - Multi-line charts
+- **ProgressBar** - Animated progress bars with color coding
+- **MetricCardChart** - KPI cards with trends
 
-```env
-API_HOST=0.0.0.0
-API_PORT=8000
-CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","tauri://localhost"]
-LOG_LEVEL=INFO
-```
+### DataDisplay.tsx
+- **Card** - Consistent card layout
+- **Table** - Sortable, striped tables with custom renderers
+- **Badge** - Status badges (success, warning, error, info, critical, high, medium)
+- **StatGrid** - Responsive metric grid
+- **Section** - Page sections with headers
 
-## Cross-Platform Support
+## 🎯 Key Features
 
-| Platform | Status |
-|----------|--------|
-| Web (Chrome/Firefox/Safari/Edge) | ✅ Full support |
-| Windows (Tauri) | ✅ Native desktop |
-| macOS (Tauri) | ✅ Native desktop |
-| Linux (Tauri) | ✅ Native desktop |
-| Mobile (Capacitor) | 🚧 Planned |
+### Real-time Pipeline Progress
+- Stage-by-stage tracking (fetch → preprocess → train → evaluate → rag → report)
+- Progress bars with status icons
+- Live log streaming via WebSocket
 
-## Data Pipeline
+### Interactive Charts
+- Hover tooltips with formatted values
+- Color-coded risk levels (critical=red, high=orange, medium=green)
+- Responsive design for all screen sizes
 
-The backend wraps the original Python pipeline (`safety_nlp_pipeline/`):
+### Full Web Control
+- Start/stop pipeline and monitor services
+- Configure pipeline parameters (force refresh, skip fetch, skip RAG, samples)
+- View real-time logs with filtering
+- Run individual pipeline stages
 
-1. **Fetch**: NASA ASRS aviation reports + NERC power-grid PDFs
-2. **Preprocess**: NLTK tokenization, lemmatization, stopword removal
-3. **Train**: TF-IDF (bigrams) + SGDClassifier with GridSearchCV
-4. **Evaluate**: Classification reports, confusion matrix, plots
-5. **RAG**: Cosine similarity evidence retrieval
-6. **Monitor**: Real-time incident ingestion & alerting
+### Live Alerts Dashboard
+- Risk level filtering (critical/high/medium)
+- Source filtering
+- Expandable alert details with RAG evidence
+- Timeline and source distribution charts
 
-## Development
+## 🛠️ Development
 
 ### Adding a New Page
-
 1. Create component in `frontend/src/pages/`
 2. Add route in `frontend/src/App.tsx`
-3. Add navigation item in `frontend/src/components/layout/Sidebar.tsx`
+3. Add navigation item in `Sidebar.tsx`
 
 ### Extending the API
-
 1. Add schemas in `backend/schemas.py`
 2. Add endpoint in `backend/main.py`
 3. Update ML service in `backend/ml_service.py` if needed
 4. Add hook in `frontend/src/hooks/useApi.ts`
 5. Create/update page component
 
-## Troubleshooting
+## 📦 Dependencies
 
-### Model Not Loaded
-- Run pipeline first: `POST /api/pipeline/run` or `python main.py` in `safety_nlp_pipeline/`
-- Check data exists at `safety_nlp_pipeline/data/real_safety_dataset.csv`
+### Backend
+```
+fastapi==0.115.0
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.9.0
+joblib==1.4.2
+pandas==2.2.3
+scikit-learn==1.6.1
+nltk==3.9.1
+```
 
-### CORS Errors
-- Ensure frontend URL is in `CORS_ORIGINS` in backend config
-- For Tauri: add `tauri://localhost` to origins
+### Frontend
+```
+react: ^18.3.1
+react-dom: ^18.3.1
+react-router-dom: ^6.26.2
+axios: ^1.7.7
+recharts: ^2.12.7
+lucide-react: ^0.441.0
+zustand: ^5.0.0
+tailwindcss: ^3.4.13
+typescript: ^5.6.2
+vite: ^5.4.8
+```
 
-### WebSocket Issues
-- Check proxy config in `frontend/nginx.conf` (Docker) or `vite.config.ts` (dev)
+## 🔧 Configuration
 
-## License
+Environment variables (`backend/.env`):
+```env
+API_HOST=0.0.0.0
+API_PORT=8000
+CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
+LOG_LEVEL=INFO
+```
 
-MIT License - See LICENSE file for details.
+## 📄 License
+
+MIT License

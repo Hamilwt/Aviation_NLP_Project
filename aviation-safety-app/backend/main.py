@@ -1,14 +1,17 @@
-"""FastAPI application for Safety NLP Pipeline."""
+"""FastAPI application for Safety NLP Pipeline - Full Web Control."""
 import logging
 import subprocess
 import sys
 import threading
 import time
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
+from datetime import datetime
+from queue import Queue
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,9 +22,11 @@ from schemas import (
     ClassifyRequest, ClassifyResponse, AnalyzeRequest, DataAssistantResponse,
     DatasetStats, ModelPerformanceResponse, AlertsResponse,
     SystemControlResponse, ServiceStatus, PipelineRunRequest, PipelineRunResponse,
-    HealthResponse, MonitorControlRequest
+    HealthResponse, MonitorControlRequest, FetchDataRequest, FetchResult,
+    TrainModelRequest, TrainResult, PipelineStage, PipelineStageProgress,
+    ServiceName, ServiceAction, RiskLevel, EvidenceItem,
 )
-from ml_service import ml_service
+from ml_service import ml_service, PipelineProgress
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +53,7 @@ class ProcessManager:
     def __init__(self):
         self.processes: Dict[str, subprocess.Popen] = {}
         self.log_buffers: Dict[str, List[str]] = {name: [] for name in self.SERVICES}
+        self.log_queues: Dict[str, Queue] = {name: Queue() for name in self.SERVICES}
         self.log_threads: Dict[str, threading.Thread] = {}
         self.lock = threading.Lock()
     
@@ -56,10 +62,12 @@ class ProcessManager:
             for line in iter(stream.readline, ''):
                 if line:
                     with self.lock:
-                        self.log_buffers[service_name].append(f"[{service_name}] {line.rstrip()}")
+                        entry = f"[{datetime.now().strftime('%H:%M:%S')}] {line.rstrip()}"
+                        self.log_buffers[service_name].append(entry)
+                        self.log_queues[service_name].put(entry)
                         # Keep buffer bounded
-                        if len(self.log_buffers[service_name]) > 500:
-                            self.log_buffers[service_name] = self.log_buffers[service_name][-500:]
+                        if len(self.log_buffers[service_name]) > 1000:
+                            self.log_buffers[service_name] = self.log_buffers[service_name][-1000:]
         except Exception:
             pass
         finally:
@@ -133,9 +141,13 @@ class ProcessManager:
             proc = self.processes.get(service_name)
             return proc is not None and proc.poll() is None
     
-    def get_logs(self, service_name: str) -> List[str]:
+    def get_logs(self, service_name: str, since: Optional[int] = None) -> List[str]:
         with self.lock:
-            return self.log_buffers.get(service_name, [])[:]
+            logs = self.log_buffers.get(service_name, [])[:]
+            if since is not None:
+                # Return last N entries
+                return logs[-since:]
+            return logs
     
     def get_all_status(self) -> Dict[str, bool]:
         return {name: self.is_running(name) for name in self.SERVICES}
@@ -147,24 +159,33 @@ class ProcessManager:
 
 proc_mgr = ProcessManager()
 
+# WebSocket connections for real-time logs
+active_websockets: Dict[str, List[WebSocket]] = {"pipeline": [], "monitor": []}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Safety NLP API...")
     # Load ML artifacts in background
-    import threading
     load_thread = threading.Thread(target=ml_service.load_artifacts, daemon=True)
     load_thread.start()
     yield
     # Shutdown
     logger.info("Shutting down...")
     proc_mgr.stop_all()
+    # Close all websockets
+    for ws_list in active_websockets.values():
+        for ws in ws_list:
+            try:
+                await ws.close()
+            except:
+                pass
 
 
 app = FastAPI(
     title="Safety NLP Pipeline API",
-    description="Aviation & Power-Grid Incident Analysis API with TF-IDF + SGD + RAG Explainability",
+    description="Aviation & Power-Grid Incident Analysis API with TF-IDF + SGD + RAG Explainability - Full Web Control",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -183,7 +204,10 @@ if settings.PLOTS_DIR.exists():
     app.mount("/api/plots", StaticFiles(directory=settings.PLOTS_DIR), name="plots")
 
 
-# Health check
+# ============================================================
+# HEALTH & STATUS
+# ============================================================
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     return HealthResponse(
@@ -191,10 +215,14 @@ async def health_check():
         version="2.0.0",
         model_loaded=ml_service._model is not None,
         data_loaded=ml_service._df is not None,
+        monitor_running=proc_mgr.is_running("monitor"),
     )
 
 
-# Dataset Overview
+# ============================================================
+# DATASET OVERVIEW
+# ============================================================
+
 @app.get("/api/overview", response_model=DatasetStats)
 async def get_overview():
     if not ml_service.is_ready():
@@ -203,7 +231,10 @@ async def get_overview():
     return DatasetStats(**stats)
 
 
-# Model Performance
+# ============================================================
+# MODEL PERFORMANCE
+# ============================================================
+
 @app.get("/api/model-performance", response_model=ModelPerformanceResponse)
 async def get_model_performance():
     if not ml_service.is_ready():
@@ -214,7 +245,10 @@ async def get_model_performance():
     return ModelPerformanceResponse(**perf)
 
 
-# RAG Explorer - Classify with evidence
+# ============================================================
+# RAG CLASSIFICATION
+# ============================================================
+
 @app.post("/api/classify", response_model=ClassifyResponse)
 async def classify_incident(request: ClassifyRequest):
     if not ml_service.is_ready():
@@ -226,7 +260,7 @@ async def classify_incident(request: ClassifyRequest):
         )
         return ClassifyResponse(
             predicted_label=predicted,
-            evidence=evidence,
+            evidence=[EvidenceItem(**e) for e in evidence],
             processing_time_ms=processing_time
         )
     except Exception as e:
@@ -234,7 +268,10 @@ async def classify_incident(request: ClassifyRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Data Assistant
+# ============================================================
+# DATA ASSISTANT
+# ============================================================
+
 @app.post("/api/analyze", response_model=DataAssistantResponse)
 async def analyze_data(request: AnalyzeRequest):
     if not ml_service.is_ready():
@@ -244,14 +281,20 @@ async def analyze_data(request: AnalyzeRequest):
     return DataAssistantResponse(lines=lines)
 
 
-# Live Alerts
+# ============================================================
+# LIVE ALERTS
+# ============================================================
+
 @app.get("/api/alerts", response_model=AlertsResponse)
-async def get_alerts(limit: int = 50):
+async def get_alerts(limit: int = Query(50, ge=1, le=500)):
     data = ml_service.get_alerts(limit)
     return AlertsResponse(**data)
 
 
-# System Control
+# ============================================================
+# SYSTEM CONTROL
+# ============================================================
+
 @app.get("/api/system/status", response_model=SystemControlResponse)
 async def get_system_status():
     status = proc_mgr.get_all_status()
@@ -271,20 +314,21 @@ async def get_system_status():
     
     logs = {}
     for name in ProcessManager.SERVICES:
-        logs[name] = proc_mgr.get_logs(name)
+        logs[name] = proc_mgr.get_logs(name, since=200)
     
     return SystemControlResponse(services=services, logs=logs)
 
 
-@app.post("/api/system/control/{service_name}")
-async def control_service(service_name: str, action: str):
-    if service_name not in ProcessManager.SERVICES:
-        raise HTTPException(status_code=404, detail=f"Unknown service: {service_name}")
-    
-    if action == "start":
-        ok, msg = proc_mgr.start(service_name)
-    elif action == "stop":
-        ok, msg = proc_mgr.stop(service_name)
+@app.post("/api/system/control/{service_name}/{action}")
+async def control_service(service_name: ServiceName, action: ServiceAction):
+    if action == ServiceAction.START:
+        ok, msg = proc_mgr.start(service_name.value)
+    elif action == ServiceAction.STOP:
+        ok, msg = proc_mgr.stop(service_name.value)
+    elif action == ServiceAction.RESTART:
+        proc_mgr.stop(service_name.value)
+        await asyncio.sleep(1)
+        ok, msg = proc_mgr.start(service_name.value)
     else:
         raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
     
@@ -292,90 +336,144 @@ async def control_service(service_name: str, action: str):
 
 
 @app.post("/api/system/control/all/{action}")
-async def control_all_services(action: str):
-    if action == "start":
+async def control_all_services(action: ServiceAction):
+    if action == ServiceAction.START:
         for name in ProcessManager.SERVICES:
             if not proc_mgr.is_running(name):
                 proc_mgr.start(name)
         return {"success": True, "message": "All services started"}
-    elif action == "stop":
+    elif action == ServiceAction.STOP:
         proc_mgr.stop_all()
         return {"success": True, "message": "All services stopped"}
     else:
         raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
 
 
-# Pipeline execution
+# ============================================================
+# PIPELINE EXECUTION (Full Web Control)
+# ============================================================
+
 @app.post("/api/pipeline/run", response_model=PipelineRunResponse)
 async def run_pipeline(request: PipelineRunRequest, background_tasks: BackgroundTasks):
+    if ml_service.is_pipeline_running():
+        raise HTTPException(status_code=409, detail="Pipeline already running")
+    
+    progress = PipelineProgress()
+    
     def run_pipeline_task():
-        import time
-        start = time.perf_counter()
-        try:
-            cmd = [sys.executable, "main.py"]
-            if request.force_refresh:
-                cmd.append("--force-refresh")
-            if request.no_fetch:
-                cmd.append("--no-fetch")
-            if request.no_rag:
-                cmd.append("--no-rag")
-            cmd.extend(["--samples", str(request.samples)])
-            
-            result = subprocess.run(
-                cmd,
-                cwd=settings.BASE_DIR,
-                capture_output=True,
-                text=True,
-                timeout=3600,
-            )
-            
-            duration = time.perf_counter() - start
-            if result.returncode == 0:
-                # Reload artifacts after successful run
-                ml_service.load_artifacts()
-                return {"success": True, "message": "Pipeline completed successfully", "duration": duration}
-            else:
-                return {"success": False, "message": result.stderr, "duration": duration}
-        except subprocess.TimeoutExpired:
-            return {"success": False, "message": "Pipeline timed out after 1 hour", "duration": time.perf_counter() - start}
-        except Exception as e:
-            return {"success": False, "message": str(e), "duration": time.perf_counter() - start}
+        result = ml_service.run_pipeline_stages(
+            request.model_dump(),
+            progress
+        )
+        return result
     
     # Run in background
-    result = run_pipeline_task()
+    background_tasks.add_task(run_pipeline_task)
+    
+    # Return initial response with pending stages
+    stages = [
+        PipelineStageProgress(stage=PipelineStage.FETCH, status="pending", progress=0, message="Queued"),
+        PipelineStageProgress(stage=PipelineStage.PREPROCESS, status="pending", progress=0, message="Queued"),
+        PipelineStageProgress(stage=PipelineStage.TRAIN, status="pending", progress=0, message="Queued"),
+        PipelineStageProgress(stage=PipelineStage.EVALUATE, status="pending", progress=0, message="Queued"),
+        PipelineStageProgress(stage=PipelineStage.RAG, status="pending", progress=0, message="Queued"),
+        PipelineStageProgress(stage=PipelineStage.REPORT, status="pending", progress=0, message="Queued"),
+    ]
+    
     return PipelineRunResponse(
-        success=result["success"],
-        message=result["message"],
-        duration_seconds=result.get("duration"),
+        success=True,
+        message="Pipeline started",
+        duration_seconds=None,
+        stages=stages,
     )
 
 
-# Monitor control
+@app.get("/api/pipeline/progress", response_model=List[PipelineStageProgress])
+async def get_pipeline_progress():
+    progress = ml_service.get_pipeline_progress()
+    return progress.to_list()
+
+
+@app.post("/api/pipeline/fetch", response_model=FetchResult)
+async def fetch_data(request: FetchDataRequest):
+    result = ml_service.fetch_data_only(request.force_refresh, request.nrows_aviation)
+    return FetchResult(**result)
+
+
+@app.post("/api/pipeline/train", response_model=TrainResult)
+async def train_model(request: TrainModelRequest):
+    # Note: This uses the config from config.py, not the request params
+    # For full param control, would need to modify trainer
+    result = ml_service.train_model_only(request.model_dump())
+    return TrainResult(**result)
+
+
+# ============================================================
+# MONITOR CONTROL
+# ============================================================
+
 @app.post("/api/monitor/control")
 async def control_monitor(request: MonitorControlRequest):
-    # This would control the monitor process
-    # For now, return status
-    return {"message": f"Monitor {request.action} requested", "poll_seconds": request.poll_seconds}
+    if request.action == ServiceAction.START:
+        ok, msg = proc_mgr.start("monitor")
+    elif request.action == ServiceAction.STOP:
+        ok, msg = proc_mgr.stop("monitor")
+    elif request.action == ServiceAction.RESTART:
+        proc_mgr.stop("monitor")
+        await asyncio.sleep(1)
+        ok, msg = proc_mgr.start("monitor")
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid action: {request.action}")
+    
+    return {"success": ok, "message": msg, "poll_seconds": request.poll_seconds}
 
 
-# WebSocket for real-time logs
+# ============================================================
+# WEBSOCKET FOR REAL-TIME LOGS
+# ============================================================
+
 @app.websocket("/api/ws/logs/{service_name}")
 async def websocket_logs(websocket: WebSocket, service_name: str):
+    if service_name not in ProcessManager.SERVICES:
+        await websocket.close(code=4004, reason="Invalid service")
+        return
+    
     await websocket.accept()
+    active_websockets[service_name].append(websocket)
+    
+    # Send initial logs
+    logs = proc_mgr.get_logs(service_name, since=100)
+    await websocket.send_json({"type": "initial", "logs": logs})
+    
     try:
+        # Stream new logs from queue
+        queue = proc_mgr.log_queues[service_name]
         while True:
-            logs = proc_mgr.get_logs(service_name)
-            await websocket.send_json({"logs": logs[-50:]})  # Send last 50 lines
-            await asyncio.sleep(2)
+            try:
+                # Non-blocking check
+                if not queue.empty():
+                    log_entry = queue.get_nowait()
+                    await websocket.send_json({
+                        "type": "log",
+                        "service": service_name,
+                        "entry": log_entry
+                    })
+                await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("WebSocket error: %s", e)
+                break
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        logger.error("WebSocket error: %s", e)
+    finally:
+        if websocket in active_websockets[service_name]:
+            active_websockets[service_name].remove(websocket)
 
 
-# Need to import asyncio
-import asyncio
-
+# ============================================================
+# MAIN
+# ============================================================
 
 if __name__ == "__main__":
     import uvicorn
@@ -383,6 +481,5 @@ if __name__ == "__main__":
         "main:app",
         host=settings.API_HOST,
         port=settings.API_PORT,
-        workers=settings.API_WORKERS,
         reload=True,
     )

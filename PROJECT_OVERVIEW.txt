@@ -8,7 +8,7 @@ TABLE OF CONTENTS
   2. Project goals
   3. Data sources
   4. Pipeline architecture
-  5. Web dashboard (Streamlit)
+  5. Web Dashboard (React + FastAPI) - PRIMARY INTERFACE
   6. Fault tolerance & idempotency
   7. Headless CLI
   8. Configuration
@@ -19,18 +19,19 @@ TABLE OF CONTENTS
  13. Research gaps addressed
  14. Git history
  15. Extras
- 16. Real-time monitoring & alerting (new)
+ 16. Real-time monitoring & alerting
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 1. WHAT THIS PROJECT IS
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 A production-grade, HEADLESS NLP pipeline that runs end-to-end with ZERO user
 intervention (`python main.py`) and produces a comprehensive, self-contained
 HTML report (model metrics, confusion matrix, RAG evidence examples, data
-quality insights). A Streamlit web dashboard with a warm, creamy-light theme
-makes the results accessible to stakeholders who are not comfortable with the
-command line.
+quality insights).
+
+**NEW**: A modern, cross-platform **React + FastAPI Web Dashboard** (`aviation-safety-app/`)
+provides full visual control over all NLP processes with rich interactive
+visualizations, real-time progress tracking, and live alert monitoring.
 
 The pipeline is modular, reproducible and fault tolerant: if a data source is
 temporarily unavailable it falls back to cached data or gracefully skips that
@@ -39,7 +40,7 @@ domain.
 It covers two safety-critical domains:
   - AVIATION   : NASA ASRS (Aviation Safety Reporting System) incident reports
   - POWER GRID : NERC (North American Electric Reliability Corporation) event
-                 analysis reports
+                  analysis reports
 
 It performs, end to end:
   1. Live data collection (fetch / refresh, idempotent)
@@ -48,17 +49,12 @@ It performs, end to end:
   4. Evaluation (classification report + confusion matrix + plots)
   5. Batch RAG explainability (semantic evidence retrieval for the test set)
   6. Self-contained HTML report generation (Jinja2)
-  7. Interactive Streamlit dashboard for stakeholders
-  8. REAL-TIME INCIDENT MONITORING & ALERTING (src/monitor.py): a continuous
-     service that turns the batch pipeline into a proactive decision-support
-     system - it ingests new incident reports as they arrive, classifies them
-     on-the-fly, scores their risk level (critical / high / medium) and raises
-     alerts with RAG evidence from similar past incidents.
+  7. **Web Dashboard** (React + FastAPI) - Full visual control interface
+  8. **Real-time monitoring & alerting** (src/monitor.py): continuous service
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 2. PROJECT GOALS
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   - Build a professional, observable, repeatable NLP solution over real public
     safety data that produces tangible outputs (HTML report + web dashboard).
   - Zero user intervention: one command runs the entire pipeline.
@@ -69,11 +65,11 @@ It performs, end to end:
   - Fault tolerance: per-domain graceful fallback to cached data.
   - A "keyless" data assistant (no LLM, no API key) that audits data quality
     and safety criticality with pandas.
+  - **Full web-based control**: All NLP processes controllable from browser.
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 3. DATA SOURCES
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 The dataset is collected LIVE from public sources every run (or reused from a
 cache) — nothing is pre-baked into the repository.
 
@@ -118,32 +114,28 @@ The 12 NERC reports (from config.py):
   - Power Grid - IBR Disturbances Western Interconnection
   - Power Grid - January 2025 Arctic Events
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 4. PIPELINE ARCHITECTURE
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   data/real_safety_dataset.csv   (NASA ASRS + NERC, ~3,700 domain-tagged reports)
         |
-  [1/6] FETCH   (live: ASRS datasets-server + NERC PDFs -> clean -> merge by domain)
+[1/6] FETCH      Live-download ASRS + NERC, clean, merge by domain -> CSV
         |
-  [2/6] PREPROCESS  (NLTK tokenize -> stopword removal -> lemmatize, per-document)
+[2/6] PREPROCESS NLTK tokenize -> stopword removal -> lemmatize (per document)
         |
-  [3/6] TRAIN   (TF-IDF bigrams, max_features=5000 -> SGD/log-loss,
-        |        GridSearchCV: alpha x class_weight, StratifiedKFold CV,
-        |        best model + vectorizer saved to data/*.pkl)
-  [4/6] EVALUATE (classification report, confusion-matrix heatmap,
-        |         class-distribution plot -> data/plots/*.png, persisted metrics)
-  [5/6] RAG EXPLAINABILITY (sample of the test set -> predict each report ->
-        |                     batch cosine similarity vs all training
-        |                     narratives -> top-3 evidence spans)
-  [6/6] HTML REPORT (Jinja2 self-contained page -> reports/pipeline_report.html)
+[3/6] TRAIN      TF-IDF (bigrams, max_features=5000) + SGD (log-loss) with GridSearchCV
         |
-  [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)
+[4/6] EVALUATE   classification report + confusion-matrix heatmap + class distribution plot
         |
-  [MON] REAL-TIME MONITOR & ALERTER (src/monitor.py, python -m src.monitor)
-        |   watches new_incidents/ + appended dataset rows + live NTSB / UKPN feeds
-        |   -> classify on-the-fly -> risk score (critical/high/medium) ->
-        |      raise alert with RAG evidence -> data/alerts.csv -> dashboard tab
+[5/6] RAG        batch explainability: top-3 most similar historical reports per prediction
+        |
+[6/6] REPORT     self-contained HTML report with all results
+        |
+[WEB] FASTAPI    REST API wrapping all pipeline functionality
+        |
+[WEB] REACT      Cross-platform dashboard (Web)
+        |
+[MON] MONITOR    Real-time incident monitoring & alerting
 
 STEP DETAILS
   1. DATA_FETCHER (src/data_fetcher.py)
@@ -196,49 +188,78 @@ STEP DETAILS
 
   7. ANALYST (src/analyst.py)
      - Keyless data assistant (quality / safety / classes / risk scanning).
-     - See section 5.
 
   8. MONITOR & ALERTER (src/monitor.py) - see section 16.
 
+  9. WEB DASHBOARD (aviation-safety-app/) - PRIMARY INTERFACE
+     - FastAPI backend exposing all pipeline functionality as REST API
+     - React + TypeScript frontend with Tailwind CSS
+     - 6 dashboard pages: Overview, Model Performance, RAG Explorer,
+       Data Assistant, Live Alerts, System Control
+     - Recharts visualizations: bar charts, pie charts, progress bars
+     - Real-time pipeline progress tracking via polling
+     - WebSocket live log streaming
+     - Full pipeline control: run, configure, monitor, view logs
 
---------------------------------------------------------------------------------
-5. WEB DASHBOARD (STREAMLIT)
---------------------------------------------------------------------------------
-Launch with:  streamlit run app_streamlit.py   (opens http://localhost:8501)
+-------------------------------------------------------------------------------
+5. WEB DASHBOARD (React + FastAPI) - PRIMARY INTERFACE
+-------------------------------------------------------------------------------
+Location: `aviation-safety-app/`
 
-A warm, creamy-light themed dashboard (background #FFF8F0, headings #5C4033,
-buttons #F5E6D3) for stakeholders who prefer a browser over the terminal. It
-loads the artifacts produced by `python main.py` and serves live predictions.
+### Backend (FastAPI)
+- **main.py**: All API endpoints for 6 dashboard pages + system control
+- **ml_service.py**: ML pipeline wrapper with PipelineProgress tracking
+- **schemas.py**: Pydantic models for request/response validation
+- **config.py**: Pydantic settings with environment variable support
 
-| Tab                  | Content                                                        |
-|----------------------|----------------------------------------------------------------|
-| Overview             | dataset size, domain split, class-distribution chart, sample rows |
-| Model Performance    | metrics, per-class classification table, confusion-matrix & distribution plots |
-| RAG Explorer         | paste an incident -> predicted class + top-3 evidence with similarity bars |
-| Data Assistant       | keyless quality / safety / class insights and risk-phrase scanning |
-| Live Alerts          | alerts raised by the monitor: color-coded table (critical/high) + RAG evidence expanders |
+### Frontend (React + TypeScript + Vite)
+- **Pages**: Overview, Model Performance, RAG Explorer, Data Assistant, Live Alerts, System Control
+- **Charts**: Recharts-based BarChart, PieChart, LineChart, ProgressBar components
+- **UI Components**: Card, Table, Badge, MetricCard, StatGrid, Input, Button
+- **State**: Zustand for global state, React hooks for data fetching
+- **Styling**: Tailwind CSS with custom cream/brown theme
 
-The theme lives in .streamlit/config.toml and custom CSS in the app.
+### Dashboard Pages
 
+| Page | Features |
+|------|----------|
+| **Overview** | Domain distribution pie, top classes horizontal bars, metric cards, narrative stats |
+| **Model Performance** | Per-class P/R/F1 grouped bars, support chart, confusion matrix image, detailed table with F1 progress bars |
+| **RAG Explorer** | Sample narratives, top-K selector, prediction card, evidence cards with similarity bars |
+| **Data Assistant** | Quick analysis buttons, natural language input, history with copy, example queries |
+| **Live Alerts** | Risk level pie chart, source bar chart, filterable table, expandable evidence, timeline |
+| **System Control** | Service status badges, pipeline stage progress bars, live logs, pipeline options |
 
---------------------------------------------------------------------------------
+### Running the Dashboard
+```bash
+# Prerequisites: Run core pipeline first to generate artifacts
+cd safety_nlp_pipeline && python main.py
+
+# Terminal 1: Backend
+cd aviation-safety-app/backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab')"
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2: Frontend
+cd aviation-safety-app/frontend
+npm install && npm run dev
+# Opens at http://localhost:5173
+```
+
+-------------------------------------------------------------------------------
 6. FAULT TOLERANCE & IDEMPOTENCY
---------------------------------------------------------------------------------
-  - If data/real_safety_dataset.csv already exists, the fetch step is skipped
-    entirely (idempotent). Delete the CSV or pass --force-refresh to download.
-  - Each domain is fetched independently. If one source fails, the pipeline
-    falls back to the cached rows for that domain, or gracefully skips it with
-    a warning.
-  - If both sources fail, the cached dataset is reused (if present).
-  - Downloaded NERC PDFs are cached in data/raw/ so re-fetches are fast.
-  - Legacy column names (Narrative / human_factors_groundtruth / Domain) are
-    auto-normalised to the canonical lowercase schema (narrative/label/domain).
-  - All steps log to the console AND pipeline.log.
+-------------------------------------------------------------------------------
+  - If data/real_safety_dataset.csv exists → fetch **skipped** (idempotent)
+  - One domain fails → falls back to cached rows for that domain
+  - Both fail → cached dataset reused (if present)
+  - NERC PDFs cached in data/raw/ → fast re-fetches
+  - Legacy column names (Narrative, human_factors_groundtruth, Domain) auto-normalised
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 7. HEADLESS CLI
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   python main.py --fetch-only       (not implemented; see flags)
   python main.py --no-fetch         # skip fetching, require cached CSV
   python main.py --force-refresh    # re-download data
@@ -253,101 +274,120 @@ The theme lives in .streamlit/config.toml and custom CSS in the app.
 
 Each src module is also runnable directly (e.g. python src/data_fetcher.py).
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 8. CONFIGURATION (config.py)
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   Data      : NROWS_AVIATION=2000, TOP_CATEGORIES=15, NERC_PDFS, PDF_CACHE
   Modeling  : MAX_FEATURES=5000, NGRAM_RANGE=(1,2), TEST_SIZE=0.2,
               CV_FOLDS=3, GRID_ALPHAS, GRID_CLASS_WEIGHTS, SGD_MAX_ITER=1000
   RAG       : RAG_TOP_K=3, RAG_BATCH=200, RAG_N_SAMPLES=100,
               RAG_EVIDENCE_SNIPPET=170
-  Report    : RAG_EXAMPLES_IN_REPORT=10, PLOT_CLASS_TOP_N=10
   Monitor   : WATCH_DIR=new_incidents/, ALERT_LOG_PATH=data/alerts.csv,
               MONITOR_POLL_SECONDS=60, MONITOR_ALERT_SNIPPET=200,
               NTSB_API_URL + NTSB_POLL_SECONDS=3600,
               UKPN_API_URL + UKPN_POLL_SECONDS=60,
               ALERT_HIGH_MIN_CUSTOMERS=100
 
+-------------------------------------------------------------------------------
+9. DEPENDENCIES
+-------------------------------------------------------------------------------
+  Core Pipeline:
+    pandas>=2.2, scikit-learn>=1.5, datasets>=3.0, joblib>=1.4,
+    nltk>=3.8, pypdf>=4.0, requests>=2.31, matplotlib>=3.8,
+    seaborn>=0.13, jinja2>=3.1, streamlit>=1.37, textual>=8.2,
+    python-docx>=1.1
 
---------------------------------------------------------------------------------
-9. DEPENDENCIES (requirements.txt)
---------------------------------------------------------------------------------
-  pandas>=2.2         Dataframes for dataset processing & assistant analysis
-  scikit-learn>=1.5   TF-IDF, SGDClassifier, GridSearchCV, cosine similarity
-  datasets>=3.0       Hugging Face datasets-server client (aviation source)
-  joblib>=1.4         Model & vectorizer pickling
-  nltk>=3.8           Tokenization, stopwords, lemmatization, sentence split
-  pypdf>=4.0          NERC PDF text extraction (power-grid source)
-  requests>=2.31      HTTP downloads (HF datasets-server + NERC PDFs)
-  matplotlib>=3.8     Confusion matrix & class distribution plots
-  seaborn>=0.13       Heatmap rendering
-  jinja2>=3.1         HTML report templates
-  streamlit>=1.37     Web dashboard
+  Backend API:
+    fastapi==0.115.0, uvicorn[standard]==0.34.0, pydantic==2.10.6,
+    pydantic-settings==2.9.0, joblib==1.4.2, pandas==2.2.3,
+    scikit-learn==1.6.1, scipy==1.14.1, requests==2.32.3,
+    pypdf==5.1.0, nltk==3.9.1, httpx==0.28.1, websockets==13.1
 
+  Frontend:
+    react@18.3.1, react-dom@18.3.1, react-router-dom@6.26.2,
+    axios@1.7.7, recharts@2.12.7, lucide-react@0.441.0,
+    clsx@2.1.1, tailwind-merge@2.5.2, date-fns@4.1.0,
+    react-hot-toast@2.4.1, zustand@5.0.0, tailwindcss@3.4.13,
+    typescript@5.6.2, vite@5.4.8
 
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 10. PROJECT STRUCTURE
---------------------------------------------------------------------------------
-  safety_nlp_pipeline/
-  |-- README.md                 usage documentation
-  |-- requirements.txt          Python dependencies
-  |-- config.py                 all parameters (paths, model settings, ...)
-  |-- main.py                   single entry point - runs the full pipeline
-  |-- app_streamlit.py          Streamlit web dashboard (creamy light theme)
-  |-- .streamlit/
-  |   `-- config.toml           dashboard theme configuration
-  |-- src/
-  |   |-- __init__.py
-  |   |-- data_fetcher.py       downloads ASRS (HF) + NERC (PDFs) -> CSV
-  |   |-- preprocessor.py       NLTK tokenization, stopwords, lemmatization
-  |   |-- trainer.py            TF-IDF + SGD classifier (log-loss) with GridSearchCV
-  |   |-- evaluator.py          classification report, confusion matrix, plots
-  |   |-- rag_explainer.py      batch + single-query semantic retrieval (cosine)
-  |   |-- analyst.py            keyless data quality & safety analysis
-  |   |-- monitor.py            real-time incident monitoring & alerting (NEW)
-  |   `-- report_generator.py   self-contained HTML report (Jinja2)
-  |-- new_incidents/            drop-in folder for new CSV/TXT reports (NEW)
-  |   `-- README.txt            format documentation
-  |-- data/                     auto-created; CSV, models, plots, metrics
-  |   |-- raw/                  cached NERC PDFs
-  |   |-- real_safety_dataset.csv
-  |   |-- safety_model.pkl
-  |   |-- tfidf_vectorizer.pkl
-  |   |-- training_config.json
-  |   |-- classification_report.txt / .csv
-  |   |-- metrics.json
-  |   |-- alerts.csv            every raised alert (NEW, shown in dashboard)
-  |   |-- monitor_state.json    monitor de-dup state, survives restarts (NEW)
-  |   `-- plots/                confusion_matrix.png, class_distribution.png
-  `-- reports/                  generated HTML report
-      `-- pipeline_report.html
+-------------------------------------------------------------------------------
+Aviation_NLP_Project/
+├── aviation-safety-app/           # Web Dashboard (React + FastAPI)
+│   ├── backend/
+│   │   ├── main.py               # FastAPI endpoints
+│   │   ├── ml_service.py         # ML wrapper + progress
+│   │   ├── config.py             # Settings
+│   │   ├── schemas.py            # Pydantic models
+│   │   └── requirements.txt
+│   ├── frontend/
+│   │   ├── src/
+│   │   │   ├── components/
+│   │   │   │   ├── charts/       # BarChart, PieChart, LineChart, ProgressBar
+│   │   │   │   ├── layout/       # Sidebar, Header, Layout
+│   │   │   │   └── ui/           # Card, Table, Badge, MetricCard, Input, Button
+│   │   │   ├── pages/            # Overview, Performance, RAG, Assistant, Alerts, System
+│   │   │   ├── hooks/            # useApi hooks
+│   │   │   ├── store/            # Zustand state
+│   │   │   ├── api/              # Axios client
+│   │   │   ├── types/            # TypeScript types
+│   │   │   └── utils/            # Helpers
+│   │   ├── package.json
+│   │   ├── vite.config.ts
+│   │   ├── tailwind.config.js
+│   │   └── tsconfig.json
+│   └── README.md
+│
+├── safety_nlp_pipeline/           # Core Python Pipeline
+│   ├── src/
+│   │   ├── data_fetcher.py
+│   │   ├── preprocessor.py
+│   │   ├── trainer.py
+│   │   ├── evaluator.py
+│   │   ├── rag_explainer.py
+│   │   ├── analyst.py
+│   │   ├── monitor.py
+│   │   └── report_generator.py
+│   ├── main.py
+│   ├── config.py
+│   ├── app_streamlit.py          # Legacy Streamlit (deprecated)
+│   └── requirements.txt
+│
+├── PROJECT_OVERVIEW.txt           # This file
+├── README.md                      # Main project README
+└── .gitignore
 
-The legacy Textual TUI (app.py + pipeline/) is preserved at the repo root as a
-developer tool and reads the same artifacts.
-
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 11. HOW TO RUN
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
+  # 1. Core pipeline (generates all artifacts)
+  cd safety_nlp_pipeline
   pip install -r requirements.txt
   python main.py                          # full pipeline, one command
   # open reports/pipeline_report.html in a browser
 
-  streamlit run app_streamlit.py          # web dashboard
-  # open http://localhost:8501
+  # 2. Web Dashboard (PRIMARY INTERFACE)
+  cd ../aviation-safety-app
+  # Backend
+  cd backend && python -m venv venv && source venv/bin/activate
+  pip install -r requirements.txt
+  python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab')"
+  uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-  python -m src.monitor                   # real-time incident monitor (NEW)
-  # drop a CSV/TXT report into new_incidents/ -> alert in dashboard tab
+  # Frontend (separate terminal)
+  cd frontend && npm install && npm run dev
+  # http://localhost:5173
 
-First run auto-downloads the NLTK corpora (stopwords, punkt, wordnet) and the
-live datasets; allow 2-5 minutes. Subsequent runs reuse the cache. The monitor
-requires a trained model - run `python main.py` at least once first.
+  # 3. Real-time Monitor (optional)
+  python -m src.monitor                   # continuous incident monitoring
 
+First run auto-downloads NLTK corpora and live datasets (2-5 minutes).
+Subsequent runs reuse cache. Monitor requires trained model — run main.py first.
 
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 12. RESULTS
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   - Dataset : ~3,700 cleaned reports — 2,000 NASA ASRS aviation narratives
               (expert anomaly labels) + ~1,700 power-grid narratives extracted
               from 12 public NERC event-analysis PDFs.
@@ -359,13 +399,12 @@ requires a trained model - run `python main.py` at least once first.
   - RAG     : aviation queries predict ATC/conflict categories with aviation
               evidence; power-grid queries predict NERC event categories with
               grid-incident evidence — every prediction is auditable.
-  - Outputs : reports/pipeline_report.html (self-contained) + Streamlit
-              dashboard; all metrics, plots and examples in one place.
+  - Outputs : reports/pipeline_report.html (self-contained) + Web Dashboard;
+              all metrics, plots and examples accessible via browser.
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 13. RESEARCH GAPS ADDRESSED
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   - Gap 4 (black-box provenance): RAG explainability module provides an audit
     trail — the report and dashboard show which historical reports influenced
     each prediction.
@@ -377,10 +416,9 @@ requires a trained model - run `python main.py` at least once first.
   - Gap 1 (physical constraints): the modular design allows swapping the
     classifier output for a solver-based constraint verifier.
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 14. GIT HISTORY
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
   91d65bc Refactor Aviation NLP Pipeline to Support Power-Grid Safety Data
   821104b Add research document, tables extract, and report generation script
   c7454b0 Enhance Aviation NLP Pipeline with Menu-Driven TUI and Data Assistant
@@ -391,84 +429,51 @@ requires a trained model - run `python main.py` at least once first.
   ea680af feat: implement public ASRS data ingestion bypassing HF gates
   9322ff0 chore: initialize project workspace and gitignore
 
-
---------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 15. EXTRAS
---------------------------------------------------------------------------------
-  - make_report.py : script that builds this DOCX report
-    (Aviation_NLP_Pipeline_Report.docx) containing the project summary, updated
+-------------------------------------------------------------------------------
+  - make_report.py : script that builds DOCX report
+    (Aviation_NLP_Pipeline_Report.docx) containing project summary, updated
     overview, architecture, structure, dependencies, latest run metrics and the
     FULL source code of every file.
   - Research document : "AI Applications in Aerospace and Power Infrastructure
     Safety" (DOCX) with _research_extract.txt and _tables_extract.txt
     text/tables extracts — supporting research material for the project.
 
+-------------------------------------------------------------------------------
+16. REAL-TIME MONITORING & ALERTING (src/monitor.py)
+-------------------------------------------------------------------------------
+The batch pipeline only reacts when run. The monitor makes it PROACTIVE:
+ingests new incident reports as they arrive, classifies them on-the-fly,
+scores their risk level and raises alerts with RAG evidence from similar past
+incidents.
 
---------------------------------------------------------------------------------
-16. REAL-TIME MONITORING & ALERTING (NEW - src/monitor.py)
---------------------------------------------------------------------------------
-The batch pipeline only reacts when it is run. The monitor (a continuous
-service) makes it PROACTIVE: it ingests new incident reports as they arrive,
-classifies them on-the-fly with the trained model, scores their risk level and
-raises alerts with RAG evidence from similar past incidents - i.e. genuine
-NLP-based assistance at the moment something critical happens.
+INGESTION SOURCES (all fault-tolerant):
+  1. Drop-in folder  : any new_incidents/*.csv or *.txt file
+  2. Master dataset  : rows appended to data/real_safety_dataset.csv
+  3. NTSB API        : public US aviation accident feed (daily)
+  4. UKPN Live Faults: near-real-time UK power cuts (minute-level, ≥100 customers → high)
 
-INGESTION SOURCES (all run inside the loop, all fault-tolerant):
-  1. Drop-in folder  : any new_incidents/*.csv or *.txt file (hand-written
-                       CSVs with unquoted commas are parsed forgivingly).
-  2. Master dataset  : rows appended to data/real_safety_dataset.csv (the
-                       first scan only establishes a baseline, so history is
-                       not re-alerted).
-  3. NTSB API        : https://api.ai-analytics.org/api/v1/ntsb/aviation/recent
-                       - public-domain (CC0) US aviation accident feed with
-                       probable-cause narratives, refreshed daily.
-  4. UKPN Live Faults: ukpn-live-faults dataset on
-                       ukpowernetworks.opendatasoft.com (OpenDataSoft API) -
-                       near-real-time UK power-cut feed, polled **every minute**; only UNPLANNED cuts
-                       are raised, and those affecting >= 100 customers are
-                       escalated to "high" regardless of keyword hits.
-
-RISK ASSESSMENT (assess_risk):
-  critical -> raw-text trigger phrases (fire, smoke, loss of communication,
-              power outage / power cut, blackout, crash, emergency, terrain,
-              engine failure, ...) OR a critical label;
-  high     -> a high label OR high-risk vocabulary (altitude, runway, weather,
-              wind shear, engine, fuel, outage, ...);
+RISK ASSESSMENT:
+  critical -> fire, smoke, loss of communication, power outage, crash, emergency, terrain, engine failure...
+  high     -> altitude, runway, weather, wind shear, engine, fuel, outage, storm, arctic...
   medium   -> everything else.
 
 ALERT LIFECYCLE:
-  new report -> classify (explain_text) -> assess risk -> if critical/high:
-  build a result dict (timestamp, incident_id, source, narrative snippet,
-  predicted_label, risk_level, evidence list) -> append to data/alerts.csv
-  (evidence serialised as JSON) -> shown live in the Streamlit "Live Alerts"
-  tab with color-coded rows and per-alert RAG evidence expanders.
+  new report -> classify -> assess risk -> if critical/high: build result -> append to data/alerts.csv -> shown in Dashboard Live Alerts tab with evidence.
 
 RELIABILITY:
-  - Lazy, cached artifact loading (dataset + model + vectorizer + RAG index
-    built once per process).
-  - De-duplication state persisted to data/monitor_state.json, so a monitor
-    restart never re-alerts on already-processed incidents.
-  - One bad incident/file/feed never stops the loop (per-item try/except).
-  - Each live feed polls on its own cadence (NTSB hourly, UKPN every 5 min);
-    all logging goes to console + pipeline.log.
+  - Lazy cached artifact loading
+  - De-duplication state in data/monitor_state.json (survives restarts)
+  - Per-item try/except (one bad incident never stops the loop)
+  - Independent poll cadences (NTSB hourly, UKPN minute)
 
 RUN:
   python main.py --monitor              # train, then start monitoring
   python -m src.monitor                 # standalone monitor loop
   python -m src.monitor --once --no-api # single scan, no live feeds
 
-EXAMPLE (assistance in action): a report "Lost communication with ATC due to
-severe static, unable to receive landing clearance." triggers a CRITICAL alert,
-and the RAG evidence retrieves the 3 most similar historical incidents with
-their outcomes - giving operators a head start based on past experience.
-
-FUTURE EXTENSIONS: Kafka/RabbitMQ subscriber instead of polling; email/SMS
-notifications (smtplib/Twilio); a recommendation engine over the evidence;
-incremental learning as new labeled incidents arrive.
-
-NOTE: The UKPN dataset you may see referenced elsewhere as `live-power-cuts`
-is **incorrect** (404). The real live feed is `ukpn-live-faults` — this is what
-the monitor polls every minute.
+FUTURE: Kafka/RabbitMQ subscriber; email/SMS notifications; recommendation engine; incremental learning.
 
 ================================================================================
 END OF PROJECT OVERVIEW

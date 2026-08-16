@@ -35,19 +35,19 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply bg-cream-400 rounded hover:bg-cream-500;
   }
-}
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-  
   .animate-fade-in {
     animation: fadeIn 0.3s ease-out;
   }
   
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
   }
 }
 
@@ -75,6 +75,24 @@
 /* Selection colors */
 ::selection {
   @apply bg-brown-200 text-brown-900;
+}
+
+/* Recharts customization */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #D9C5B2;
+}
+
+.recharts-text {
+  fill: #8B7355;
+}
+
+.recharts-legend-wrapper {
+  padding-top: 10px;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none;
 }
 
 /* Print styles */

@@ -44,7 +44,7 @@ export function Header() {
             >
               <Bell className="w-5 h-5" />
               {notifications.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-risk-critical text-white text-xs font-medium rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-medium rounded-full flex items-center justify-center">
                   {notifications.length > 9 ? '9+' : notifications.length}
                 </span>
               )}
@@ -66,10 +66,10 @@ export function Header() {
                     >
                       <div className={cn(
                         'w-2 h-2 mt-1.5 rounded-full flex-shrink-0',
-                        notification.type === 'success' && 'bg-risk-medium',
-                        notification.type === 'error' && 'bg-risk-critical',
-                        notification.type === 'warning' && 'bg-risk-high',
-                        notification.type === 'info' && 'bg-teal-500'
+                        notification.type === 'success' && 'bg-green-500',
+                        notification.type === 'error' && 'bg-red-500',
+                        notification.type === 'warning' && 'bg-orange-500',
+                        notification.type === 'info' && 'bg-blue-500'
                       )} />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-brown-800">{notification.message}</p>

@@ -8,7 +8,7 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 30000,
+      timeout: 300000, // 5 minutes for pipeline runs
       headers: {
         'Content-Type': 'application/json',
       },
@@ -58,11 +58,11 @@ class ApiClient {
     return this.client.get('/system/status');
   }
 
-  async controlService(service: string, action: 'start' | 'stop') {
-    return this.client.post(`/system/control/${service}`, null, { params: { action } });
+  async controlService(service: string, action: 'start' | 'stop' | 'restart') {
+    return this.client.post(`/system/control/${service}/${action}`);
   }
 
-  async controlAllServices(action: 'start' | 'stop') {
+  async controlAllServices(action: 'start' | 'stop' | 'restart') {
     return this.client.post(`/system/control/all/${action}`);
   }
 
@@ -72,8 +72,37 @@ class ApiClient {
     no_fetch?: boolean;
     no_rag?: boolean;
     samples?: number;
+    stages?: string[];
   }) {
     return this.client.post('/pipeline/run', options);
+  }
+
+  async getPipelineProgress() {
+    return this.client.get('/pipeline/progress');
+  }
+
+  async fetchData(options: {
+    force_refresh?: boolean;
+    nrows_aviation?: number;
+  }) {
+    return this.client.post('/pipeline/fetch', options);
+  }
+
+  async trainModel(options: {
+    max_features?: number;
+    ngram_range?: number[];
+    test_size?: number;
+    cv_folds?: number;
+    alphas?: number[];
+    class_weights?: (string | null)[];
+    max_iter?: number;
+  }) {
+    return this.client.post('/pipeline/train', options);
+  }
+
+  // Monitor
+  async controlMonitor(action: 'start' | 'stop' | 'restart', pollSeconds = 60, enableApi = true) {
+    return this.client.post('/monitor/control', { action, poll_seconds: pollSeconds, enable_api: enableApi });
   }
 }
 

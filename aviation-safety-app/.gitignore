@@ -48,13 +48,6 @@ data/
 *.pkl
 *.csv
 
-# Tauri
-frontend/src-tauri/target/
-frontend/src-tauri/*.app
-frontend/src-tauri/*.dmg
-frontend/src-tauri/*.exe
-frontend/src-tauri/*.msi
-
 # Docker
 .docker/
 
@@ -67,3 +60,10 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# Tauri (if added back)
+frontend/src-tauri/target/
+frontend/src-tauri/*.app
+frontend/src-tauri/*.dmg
+frontend/src-tauri/*.exe
+frontend/src-tauri/*.msi

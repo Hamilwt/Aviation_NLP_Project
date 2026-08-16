@@ -2,18 +2,25 @@
 import json
 import logging
 import time
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 from functools import lru_cache
+from datetime import datetime
+from dataclasses import dataclass, field
 
 import joblib
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import SGDClassifier
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
+from sklearn.pipeline import Pipeline
 
 from config import settings
-from schemas import EvidenceItem
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +62,27 @@ NARRATIVE_RISK_TERMS = {
 }
 
 
+@dataclass
+class PipelineProgress:
+    stages: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    current_stage: Optional[str] = None
+    
+    def update(self, stage: str, status: str, progress: float, message: str):
+        self.stages[stage] = {
+            "status": status,
+            "progress": progress,
+            "message": message,
+            "started_at": self.stages.get(stage, {}).get("started_at") or datetime.now().isoformat() if status == "running" else None,
+            "completed_at": datetime.now().isoformat() if status in ("completed", "failed") else None,
+        }
+        self.current_stage = stage
+    
+    def to_list(self) -> List[Dict[str, Any]]:
+        return [
+            {"stage": k, **v} for k, v in self.stages.items()
+        ]
+
+
 class MLService:
     """Service class encapsulating all ML pipeline functionality."""
     
@@ -66,6 +94,8 @@ class MLService:
         self._training_config = None
         self._metrics = None
         self._classification_report_df = None
+        self._pipeline_progress = PipelineProgress()
+        self._pipeline_running = False
     
     def load_artifacts(self) -> bool:
         """Load all model artifacts. Returns True if successful."""
@@ -162,7 +192,7 @@ class MLService:
         self, 
         narrative: str, 
         top_k: int = 3
-    ) -> Tuple[str, List[EvidenceItem], float]:
+    ) -> Tuple[str, List[Dict], float]:
         """Classify a narrative and retrieve evidence."""
         if not self.is_ready():
             raise RuntimeError("ML artifacts not loaded")
@@ -192,14 +222,14 @@ class MLService:
         for rank, idx in enumerate(top, 1):
             row = self._df.iloc[int(idx)]
             narrative_text = str(row[NARRATIVE_COL])
-            evidence.append(EvidenceItem(
-                rank=rank,
-                similarity=float(sims[idx]),
-                label=str(row[LABEL_COL]),
-                domain=str(row[DOMAIN_COL]) if DOMAIN_COL in self._df.columns else "",
-                snippet=narrative_text[:settings.RAG_EVIDENCE_SNIPPET] + 
+            evidence.append({
+                "rank": rank,
+                "similarity": float(sims[idx]),
+                "label": str(row[LABEL_COL]),
+                "domain": str(row[DOMAIN_COL]) if DOMAIN_COL in self._df.columns else "",
+                "snippet": narrative_text[:settings.RAG_EVIDENCE_SNIPPET] + 
                        ("..." if len(narrative_text) > settings.RAG_EVIDENCE_SNIPPET else "")
-            ))
+            })
         
         processing_time = (time.perf_counter() - start_time) * 1000
         return predicted, evidence, processing_time
@@ -213,6 +243,7 @@ class MLService:
         if DOMAIN_COL in self._df.columns:
             dom_counts = self._df[DOMAIN_COL].value_counts().to_dict()
         
+        narrative = self._df[NARRATIVE_COL].astype(str)
         class_dist = self._df[LABEL_COL].value_counts().head(20).to_dict()
         
         return {
@@ -220,6 +251,12 @@ class MLService:
             "domains": dom_counts,
             "anomaly_classes": int(self._df[LABEL_COL].nunique()),
             "class_distribution": class_dist,
+            "narrative_stats": {
+                "min_length": int(narrative.str.len().min()),
+                "max_length": int(narrative.str.len().max()),
+                "avg_length": float(narrative.str.len().mean()),
+                "median_length": float(narrative.str.len().median()),
+            },
         }
     
     def get_model_performance(self) -> Dict[str, Any]:
@@ -229,6 +266,7 @@ class MLService:
         
         # Convert classification report to list of dicts
         report_rows = []
+        per_class = {}
         for idx, row in self._classification_report_df.iterrows():
             if idx not in ["accuracy", "macro avg", "weighted avg"]:
                 report_rows.append({
@@ -238,6 +276,12 @@ class MLService:
                     "f1_score": float(row.get("f1-score", 0)),
                     "support": int(row.get("support", 0)),
                 })
+                per_class[str(idx)] = {
+                    "precision": float(row.get("precision", 0)),
+                    "recall": float(row.get("recall", 0)),
+                    "f1": float(row.get("f1-score", 0)),
+                    "support": int(row.get("support", 0)),
+                }
         
         return {
             "metrics": {
@@ -246,6 +290,7 @@ class MLService:
                 "test_size": self._metrics.get("test_size", 0),
                 "best_cv_f1": self._training_config.get("best_cv_f1_weighted") if self._training_config else None,
                 "training_config": self._training_config,
+                "per_class_metrics": per_class,
             },
             "classification_report": report_rows,
             "confusion_matrix_url": "/api/plots/confusion_matrix.png" if (settings.PLOTS_DIR / "confusion_matrix.png").exists() else None,
@@ -373,13 +418,13 @@ class MLService:
                     "predicted_label": str(row["predicted_label"]),
                     "narrative": str(row["narrative"]),
                     "evidence": [
-                        EvidenceItem(
-                            rank=ev.get("rank", 0),
-                            similarity=ev.get("similarity", 0),
-                            label=ev.get("label", ""),
-                            domain=ev.get("domain", ""),
-                            snippet=ev.get("snippet", "")
-                        ) for ev in row["evidence"]
+                        {
+                            "rank": ev.get("rank", 0),
+                            "similarity": ev.get("similarity", 0),
+                            "label": ev.get("label", ""),
+                            "domain": ev.get("domain", ""),
+                            "snippet": ev.get("snippet", "")
+                        } for ev in row["evidence"]
                     ]
                 })
             
@@ -388,6 +433,179 @@ class MLService:
         except Exception as e:
             logger.error("Failed to load alerts: %s", e)
             return {"counts": {}, "alerts": [], "total": 0}
+    
+    def run_pipeline_stages(
+        self, 
+        request_dict: Dict[str, Any],
+        progress: PipelineProgress
+    ) -> Dict[str, Any]:
+        """Run the full pipeline with progress tracking."""
+        import argparse
+        
+        self._pipeline_running = True
+        self._pipeline_progress = progress
+        start_time = time.perf_counter()
+        
+        try:
+            # Build command
+            cmd = [sys.executable, "main.py"]
+            if request_dict.get("force_refresh"):
+                cmd.append("--force-refresh")
+            if request_dict.get("no_fetch"):
+                cmd.append("--no-fetch")
+            if request_dict.get("no_rag"):
+                cmd.append("--no-rag")
+            cmd.extend(["--samples", str(request_dict.get("samples", 100))])
+            
+            # Run pipeline
+            progress.update("fetch", "running", 10, "Fetching data from sources...")
+            progress.update("preprocess", "pending", 0, "Waiting...")
+            progress.update("train", "pending", 0, "Waiting...")
+            progress.update("evaluate", "pending", 0, "Waiting...")
+            progress.update("rag", "pending", 0, "Waiting...")
+            progress.update("report", "pending", 0, "Waiting...")
+            
+            result = subprocess.run(
+                cmd,
+                cwd=settings.BASE_DIR,
+                capture_output=True,
+                text=True,
+                timeout=3600,
+            )
+            
+            duration = time.perf_counter() - start_time
+            
+            if result.returncode == 0:
+                # Mark all stages complete
+                for stage in ["fetch", "preprocess", "train", "evaluate", "rag", "report"]:
+                    progress.update(stage, "completed", 100, f"{stage.capitalize()} completed")
+                
+                # Reload artifacts after successful run
+                self.load_artifacts()
+                
+                artifacts = {
+                    "dataset": str(settings.DATASET_PATH),
+                    "model": str(settings.MODEL_PATH),
+                    "vectorizer": str(settings.VECTORIZER_PATH),
+                    "report": str(settings.REPORTS_DIR / "pipeline_report.html"),
+                    "metrics": str(settings.METRICS_JSON),
+                }
+                
+                return {
+                    "success": True,
+                    "message": "Pipeline completed successfully",
+                    "duration_seconds": duration,
+                    "stages": progress.to_list(),
+                    "artifacts": artifacts,
+                }
+            else:
+                progress.update("fetch", "failed", 0, result.stderr[:500])
+                return {
+                    "success": False,
+                    "message": result.stderr,
+                    "duration_seconds": duration,
+                    "stages": progress.to_list(),
+                }
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "message": "Pipeline timed out after 1 hour",
+                "duration_seconds": time.perf_counter() - start_time,
+                "stages": progress.to_list(),
+            }
+        except Exception as e:
+            logger.error("Pipeline failed: %s", e)
+            return {
+                "success": False,
+                "message": str(e),
+                "duration_seconds": time.perf_counter() - start_time,
+                "stages": progress.to_list(),
+            }
+        finally:
+            self._pipeline_running = False
+    
+    def fetch_data_only(self, force_refresh: bool = False, nrows: int = 2000) -> Dict[str, Any]:
+        """Run only the data fetch stage."""
+        from src.data_fetcher import fetch_all
+        
+        try:
+            start = time.perf_counter()
+            df = fetch_all(force_refresh=force_refresh, nrows=nrows)
+            duration = time.perf_counter() - start
+            
+            av = int((df[DOMAIN_COL] == "Aviation").sum()) if DOMAIN_COL in df.columns else 0
+            pw = int((df[DOMAIN_COL] == "Power Grid").sum()) if DOMAIN_COL in df.columns else 0
+            
+            # Reload artifacts if successful
+            self.load_artifacts()
+            
+            return {
+                "success": True,
+                "message": f"Fetched {len(df)} reports",
+                "aviation_count": av,
+                "power_grid_count": pw,
+                "total_count": len(df),
+                "duration_seconds": duration,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "aviation_count": 0,
+                "power_grid_count": 0,
+                "total_count": 0,
+                "duration_seconds": 0,
+            }
+    
+    def train_model_only(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run only the model training stage."""
+        from src.trainer import train_and_save
+        from src.preprocessor import add_processed_column
+        
+        try:
+            start = time.perf_counter()
+            
+            # Load dataset
+            if not settings.DATASET_PATH.exists():
+                return {"success": False, "message": "Dataset not found. Run fetch first."}
+            
+            df = pd.read_csv(settings.DATASET_PATH)
+            df = add_processed_column(df, NARRATIVE_COL)
+            
+            # Train
+            model, vectorizer, X_train, y_train, X_test, y_test = train_and_save(df)
+            
+            duration = time.perf_counter() - start
+            
+            # Reload artifacts
+            self.load_artifacts()
+            
+            return {
+                "success": True,
+                "message": f"Model trained with {len(X_train)} samples",
+                "accuracy": 0,  # Will be updated after evaluation
+                "n_classes": len(model.classes_),
+                "best_params": {
+                    "alpha": model.alpha,
+                    "class_weight": "balanced" if hasattr(model, 'class_weight') and model.class_weight == "balanced" else None,
+                },
+                "duration_seconds": duration,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": str(e),
+                "accuracy": 0,
+                "n_classes": 0,
+                "best_params": {},
+                "duration_seconds": 0,
+            }
+    
+    def is_pipeline_running(self) -> bool:
+        return self._pipeline_running
+    
+    def get_pipeline_progress(self) -> PipelineProgress:
+        return self._pipeline_progress
 
 
 # Global service instance

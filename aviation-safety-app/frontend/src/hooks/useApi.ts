@@ -149,6 +149,7 @@ export function useAnalyze() {
 export function usePipeline() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Array<{ stage: string; status: string; progress: number; message: string }>>([]);
   const { addNotification } = useUIStore();
 
   const runPipeline = useCallback(async (options: {
@@ -156,16 +157,36 @@ export function usePipeline() {
     no_fetch?: boolean;
     no_rag?: boolean;
     samples?: number;
+    stages?: string[];
   }) => {
     setLoading(true);
     setError(null);
+    setProgress([
+      { stage: 'fetch', status: 'pending', progress: 0, message: 'Queued' },
+      { stage: 'preprocess', status: 'pending', progress: 0, message: 'Queued' },
+      { stage: 'train', status: 'pending', progress: 0, message: 'Queued' },
+      { stage: 'evaluate', status: 'pending', progress: 0, message: 'Queued' },
+      { stage: 'rag', status: 'pending', progress: 0, message: 'Queued' },
+      { stage: 'report', status: 'pending', progress: 0, message: 'Queued' },
+    ]);
     try {
       const response = await api.runPipeline(options);
-      if (response.data.success) {
-        addNotification({ type: 'success', message: 'Pipeline completed successfully' });
-      } else {
-        addNotification({ type: 'error', message: response.data.message });
-      }
+      // Start polling for progress
+      const pollProgress = async () => {
+        try {
+          const progRes = await api.getPipelineProgress();
+          setProgress(progRes.data);
+          if (progRes.data.some((s: any) => s.status === 'running' || s.status === 'pending')) {
+            setTimeout(pollProgress, 2000);
+          } else {
+            // Final result
+            addNotification({ type: response.data.success ? 'success' : 'error', message: response.data.message });
+          }
+        } catch (e) {
+          console.error('Progress poll failed:', e);
+        }
+      };
+      setTimeout(pollProgress, 1000);
       return response.data;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Pipeline failed';
@@ -177,14 +198,56 @@ export function usePipeline() {
     }
   }, [addNotification]);
 
-  return { runPipeline, loading, error };
+  const fetchData = useCallback(async (options: { force_refresh?: boolean; nrows_aviation?: number }) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.fetchData(options);
+      if (response.data.success) {
+        addNotification({ type: 'success', message: 'Data fetch completed' });
+      } else {
+        addNotification({ type: 'error', message: response.data.message });
+      }
+      return response.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Fetch failed';
+      setError(message);
+      addNotification({ type: 'error', message });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [addNotification]);
+
+  const trainModel = useCallback(async (options: any) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.trainModel(options);
+      if (response.data.success) {
+        addNotification({ type: 'success', message: 'Model training completed' });
+      } else {
+        addNotification({ type: 'error', message: response.data.message });
+      }
+      return response.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Training failed';
+      setError(message);
+      addNotification({ type: 'error', message });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [addNotification]);
+
+  return { runPipeline, fetchData, trainModel, loading, error, progress };
 }
 
 export function useServiceControl() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const { addNotification } = useUIStore();
 
-  const controlService = useCallback(async (service: string, action: 'start' | 'stop') => {
+  const controlService = useCallback(async (service: string, action: 'start' | 'stop' | 'restart') => {
     setLoading((prev) => ({ ...prev, [service]: true }));
     try {
       const response = await api.controlService(service, action);
@@ -202,7 +265,7 @@ export function useServiceControl() {
     }
   }, [addNotification]);
 
-  const controlAll = useCallback(async (action: 'start' | 'stop') => {
+  const controlAll = useCallback(async (action: 'start' | 'stop' | 'restart') => {
     setLoading((prev) => ({ ...prev, all: true }));
     try {
       const response = await api.controlAllServices(action);
@@ -221,4 +284,29 @@ export function useServiceControl() {
   }, [addNotification]);
 
   return { controlService, controlAll, loading };
+}
+
+export function useMonitorControl() {
+  const [loading, setLoading] = useState(false);
+  const { addNotification } = useUIStore();
+
+  const controlMonitor = useCallback(async (action: 'start' | 'stop' | 'restart', pollSeconds = 60, enableApi = true) => {
+    setLoading(true);
+    try {
+      const response = await api.controlMonitor(action, pollSeconds, enableApi);
+      addNotification({ 
+        type: response.data.success ? 'success' : 'error', 
+        message: response.data.message 
+      });
+      return response.data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : `Failed to ${action} monitor`;
+      addNotification({ type: 'error', message });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [addNotification]);
+
+  return { controlMonitor, loading };
 }
