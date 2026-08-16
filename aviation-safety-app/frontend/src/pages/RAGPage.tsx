@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useClassify } from '@/hooks/useApi';
-import { Section, Card, CardHeader, Button, Textarea, Badge, ProgressBar, MetricCard } from '@/components/ui/DataDisplay';
-import { Loader2, Search, FileText, ArrowRight, Copy, Check, X, Sparkles } from 'lucide-react';
-import { cn } from '@/utils/helpers';
+import { Section, Card, CardHeader, Button, Textarea, Badge, ProgressBar } from '@/components/ui';
+import { Search, Copy, Check, X, Sparkles } from 'lucide-react';
 
 const SAMPLE_NARRATIVES = [
   "I was cleared for the ILS approach but misheard the altitude restriction due to heavy static on the radio frequency. We descended below the minimum safe altitude and received a terrain warning.",
@@ -66,146 +65,146 @@ export function RAGPage() {
             Clear
           </Button>
         }
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1">
-          <CardHeader title="Sample Narratives" subtitle="Click to test classification" />
-          <div className="space-y-2">
-            {SAMPLE_NARRATIVES.map((sample, idx) => (
-              <Button
-                key={idx}
-                variant={activeSample === idx ? 'primary' : 'outline'}
-                className="w-full justify-start text-left p-3 h-auto gap-2"
-                onClick={() => handleSampleClick(sample, idx)}
-                loading={loading}
-              >
-                <Sparkles className="w-4 h-4 flex-shrink-0" />
-                <div className="text-sm leading-relaxed">
-                  {sample.slice(0, 80)}...
-                </div>
-              </Button>
-            ))}
-          </div>
-          
-          <div className="mt-6 p-4 bg-cream-100 rounded-lg">
-            <p className="text-sm font-medium text-brown-700 mb-2">Quick Actions</p>
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="lg:col-span-1">
+            <CardHeader title="Sample Narratives" subtitle="Click to test classification" />
             <div className="space-y-2">
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleClear} disabled={!narrative.trim() && !result}>
-                <X className="w-4 h-4" />
-                Clear Input
-              </Button>
-              <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setNarrative(SAMPLE_NARRATIVES[0])}>
-                <ArrowRight className="w-4 h-4" />
-                Load First Sample
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader 
-            title="Incident Narrative" 
-            subtitle="Enter or paste an incident description for classification"
-            action={
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-sm text-brown-700">
-                  <span>Top-K:</span>
-                  <select
-                    value={topK}
-                    onChange={(e) => setTopK(Number(e.target.value))}
-                    className="px-3 py-1.5 border-cream-300 rounded-lg text-sm focus:ring-2 focus:ring-brown-500 focus:border-transparent"
-                  >
-                    <option value={1}>1</option>
-                    <option value={2}>2</option>
-                    <option value={3}>3</option>
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                  </select>
-                </label>
-                <Button 
-                  onClick={handleClassify} 
+              {SAMPLE_NARRATIVES.map((sample, idx) => (
+                <Button
+                  key={idx}
+                  variant={activeSample === idx ? 'primary' : 'outline'}
+                  className="w-full justify-start text-left p-3 h-auto gap-2"
+                  onClick={() => handleSampleClick(sample, idx)}
                   loading={loading}
-                  disabled={!narrative.trim()}
-                  size="lg"
                 >
-                  <Search className="w-4 h-4" />
-                  Classify & Retrieve Evidence
+                  <Sparkles className="w-4 h-4 flex-shrink-0" />
+                  <div className="text-sm leading-relaxed">
+                    {sample.slice(0, 80)}...
+                  </div>
+                </Button>
+              ))}
+            </div>
+            
+            <div className="mt-6 p-4 bg-cream-100 rounded-lg">
+              <p className="text-sm font-medium text-brown-700 mb-2">Quick Actions</p>
+              <div className="space-y-2">
+                <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleClear} disabled={!narrative.trim() && !result}>
+                  <X className="w-4 h-4" />
+                  Clear Input
+                </Button>
+                <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => setNarrative(SAMPLE_NARRATIVES[0])}>
+                  <Sparkles className="w-4 h-4" />
+                  Load First Sample
                 </Button>
               </div>
-            }
-          />
-          
-          <Textarea
-            value={narrative}
-            onChange={(e) => { setNarrative(e.target.value); setActiveSample(-1); }}
-            placeholder="Paste an incident narrative here..."
-            rows={6}
-            label="Narrative"
-          />
-
-          {result && (
-            <div className="mt-6 space-y-6 animate-fade-in">
-              <Card className="bg-brown-50 border-brown-200">
-                <CardHeader 
-                  title="Prediction Result" 
-                  subtitle={`Processed in ${result.processing_time_ms.toFixed(1)}ms`}
-                  action={
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={handleCopy}
-                      loading={copied}
-                    >
-                      {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-                    </Button>
-                  }
-                />
-                <div className="flex items-center gap-4 p-4 bg-brown-100 rounded-lg">
-                  <div className="w-12 h-12 bg-brown-700 rounded-full flex items-center justify-center">
-                    <Sparkles className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-brown-500 text-sm">Predicted Risk Category</p>
-                    <p className="text-2xl font-bold text-brown-800">{result.predicted_label}</p>
-                  </div>
-                </div>
-              </Card>
-
-              <Card>
-                <CardHeader title={`Top ${result.evidence.length} Similar Historical Reports`} subtitle="Evidence retrieved via cosine similarity on TF-IDF vectors" />
-                <div className="space-y-4">
-                  {result.evidence.map((ev) => (
-                    <Card key={ev.rank} className={cn('relative overflow-hidden', ev.similarity > 0.7 && 'border-green-300')}>
-                      <div className="absolute top-0 left-0 h-full w-1" style={{ backgroundColor: ev.similarity > 0.7 ? '#22C55E' : ev.similarity > 0.4 ? '#F59E0B' : '#EF4444' }} />
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 mb-2">
-                            <Badge variant="info" size="sm">#{ev.rank}</Badge>
-                            <Badge variant={ev.similarity > 0.7 ? 'success' : ev.similarity > 0.4 ? 'warning' : 'default'} size="sm">
-                              {(ev.similarity * 100).toFixed(1)}% Similar
-                            </Badge>
-                            <Badge variant="default" size="sm">{ev.domain}</Badge>
-                          </div>
-                          <p className="font-medium text-brown-800">{ev.label}</p>
-                        </div>
-                        <div className="flex items-center gap-4 text-right">
-                          <div className="w-32">
-                            <ProgressBar value={ev.similarity * 100} color={ev.similarity > 0.7 ? '#22C55E' : ev.similarity > 0.4 ? '#F59E0B' : '#EF4444'} height={8} showLabel />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3 p-3 bg-cream-100 rounded-lg border border-cream-200">
-                        <p className="text-sm text-brown-600 italic">"{ev.snippet}"</p>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </Card>
             </div>
-          )}
-        </Card>
-      </div>
+          </Card>
+
+          <Card className="lg:col-span-2">
+            <CardHeader 
+              title="Incident Narrative" 
+              subtitle="Enter or paste an incident description for classification"
+              action={
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm text-brown-700">
+                    <span>Top-K:</span>
+                    <select
+                      value={topK}
+                      onChange={(e) => setTopK(Number(e.target.value))}
+                      className="px-3 py-1.5 border-cream-300 rounded-lg text-sm focus:ring-2 focus:ring-brown-500 focus:border-transparent"
+                    >
+                      <option value={1}>1</option>
+                      <option value={2}>2</option>
+                      <option value={3}>3</option>
+                      <option value={5}>5</option>
+                      <option value={10}>10</option>
+                    </select>
+                  </label>
+                  <Button 
+                    onClick={handleClassify} 
+                    loading={loading}
+                    disabled={!narrative.trim()}
+                    size="lg"
+                  >
+                    <Search className="w-4 h-4" />
+                    Classify & Retrieve Evidence
+                  </Button>
+                </div>
+              }
+            />
+            
+            <Textarea
+              value={narrative}
+              onChange={(e) => { setNarrative(e.target.value); setActiveSample(-1); }}
+              placeholder="Paste an incident narrative here..."
+              rows={6}
+              label="Narrative"
+            />
+
+            {result && (
+              <div className="mt-6 space-y-6 animate-fade-in">
+                <Card className="bg-brown-50 border-brown-200">
+                  <CardHeader 
+                    title="Prediction Result" 
+                    subtitle={`Processed in ${result.processing_time_ms.toFixed(1)}ms`}
+                    action={
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={handleCopy}
+                        loading={copied}
+                      >
+                        {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    }
+                  />
+                  <div className="flex items-center gap-4 p-4 bg-brown-100 rounded-lg">
+                    <div className="w-12 h-12 bg-brown-700 rounded-full flex items-center justify-center">
+                      <Sparkles className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-brown-500 text-sm">Predicted Risk Category</p>
+                      <p className="text-2xl font-bold text-brown-800">{result.predicted_label}</p>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card>
+                  <CardHeader title={`Top ${result.evidence.length} Similar Historical Reports`} subtitle="Evidence retrieved via cosine similarity on TF-IDF vectors" />
+                  <div className="space-y-4">
+                    {result.evidence.map((ev) => (
+                      <Card key={ev.rank} className="relative overflow-hidden">
+                        <div className="absolute top-0 left-0 h-full w-1" style={{ backgroundColor: ev.similarity > 0.7 ? '#22C55E' : ev.similarity > 0.4 ? '#F59E0B' : '#EF4444' }} />
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <Badge variant="info" size="sm">#{ev.rank}</Badge>
+                              <Badge variant={ev.similarity > 0.7 ? 'success' : ev.similarity > 0.4 ? 'warning' : 'default'} size="sm">
+                                {(ev.similarity * 100).toFixed(1)}% Similar
+                              </Badge>
+                              <Badge variant="default" size="sm">{ev.domain}</Badge>
+                            </div>
+                            <p className="font-medium text-brown-800">{ev.label}</p>
+                          </div>
+                          <div className="flex items-center gap-4 text-right">
+                            <div className="w-32">
+                              <ProgressBar value={ev.similarity * 100} color={ev.similarity > 0.7 ? '#22C55E' : ev.similarity > 0.4 ? '#F59E0B' : '#EF4444'} height={8} showLabel />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 p-3 bg-cream-100 rounded-lg border border-cream-200">
+                          <p className="text-sm text-brown-600 italic">"{ev.snippet}"</p>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            )}
+          </Card>
+        </div>
+      </Section>
 
       {error && (
         <Card className="border-red-300 bg-red-50">

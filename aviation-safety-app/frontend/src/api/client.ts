@@ -16,7 +16,7 @@ class ApiClient {
 
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
+      (error: AxiosError<{ detail?: string }>) => {
         const message = error.response?.data?.detail || error.message || 'An error occurred';
         return Promise.reject(new Error(message));
       }

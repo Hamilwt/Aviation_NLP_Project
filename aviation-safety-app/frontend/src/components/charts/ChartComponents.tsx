@@ -1,13 +1,12 @@
 import { cn } from '@/utils/helpers';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Sector,
-  LineChart, Line, AreaChart, Area,
+  PieChart, Pie,
+  LineChart, Line,
   ComposedChart,
   Legend,
   LabelList,
 } from 'recharts';
-import { ReactNode } from 'react';
 
 const COLORS = [
   '#5C4033', '#8B6B4D', '#A98467', '#C9B099', '#D9C5B2',
@@ -30,6 +29,7 @@ export function BarChartComponent({
   yKeys,
   labels,
   colors = COLORS,
+  barColors,
   height = 300,
   horizontal = false,
   showValue = true,
@@ -40,13 +40,14 @@ export function BarChartComponent({
   yKeys: string | string[];
   labels?: Record<string, string>;
   colors?: string[];
+  barColors?: string[];
   height?: number;
   horizontal?: boolean;
   showValue?: boolean;
   className?: string;
 }) {
   const keys = Array.isArray(yKeys) ? yKeys : [yKeys];
-  const isMulti = keys.length > 1;
+  const usedColors = barColors || colors;
 
   return (
     <div className={cn('w-full', className)} style={{ height }}>
@@ -77,7 +78,7 @@ export function BarChartComponent({
                 key={key}
                 dataKey={key}
                 name={labels?.[key] || key}
-                fill={colors[i % colors.length]}
+                fill={usedColors[i % usedColors.length]}
                 radius={[0, 4, 4, 0]}
                 maxBarSize={30}
               >
@@ -110,7 +111,7 @@ export function BarChartComponent({
                 key={key}
                 dataKey={key}
                 name={labels?.[key] || key}
-                fill={colors[i % colors.length]}
+                fill={usedColors[i % usedColors.length]}
                 radius={[4, 4, 0, 0]}
                 maxBarSize={40}
               >
@@ -158,7 +159,7 @@ export function PieChartComponent({
             labelLine={false}
             fill="#8884d8"
           >
-            {data.map((entry, i) => (
+            {data.map((_, i) => (
               <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />
             ))}
           </Pie>
@@ -293,7 +294,6 @@ export function MetricCardChart({
   trend,
   trendLabel,
   color = '#5C4033',
-  height = 80,
   className,
 }: {
   value: string | number;
@@ -301,7 +301,6 @@ export function MetricCardChart({
   trend?: number;
   trendLabel?: string;
   color?: string;
-  height?: number;
   className?: string;
 }) {
   return (

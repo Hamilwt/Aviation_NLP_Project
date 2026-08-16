@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+interface Notification {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+  duration?: number;
+}
+
 interface UIState {
   sidebarOpen: boolean;
   theme: 'light' | 'dark';
@@ -12,13 +19,6 @@ interface UIState {
   setActiveTab: (tab: string) => void;
   addNotification: (notification: Omit<Notification, 'id'>) => void;
   removeNotification: (id: string) => void;
-}
-
-interface Notification {
-  id: string;
-  type: 'success' | 'error' | 'warning' | 'info';
-  message: string;
-  duration?: number;
 }
 
 export const useUIStore = create<UIState>()(
@@ -73,17 +73,17 @@ interface DataState {
   clearError: (key: string) => void;
 }
 
-export const useDataStore = create<DataState>((set) => ({
+export const useDataStore = create<DataState>((set, get) => ({
   overview: null,
   modelPerformance: null,
   alerts: null,
   systemStatus: null,
   loading: {},
   error: {},
-  setOverview: (data) => set({ overview: data, error: { ...set.getState().error, overview: null } }),
-  setModelPerformance: (data) => set({ modelPerformance: data, error: { ...set.getState().error, modelPerformance: null } }),
-  setAlerts: (data) => set({ alerts: data, error: { ...set.getState().error, alerts: null } }),
-  setSystemStatus: (data) => set({ systemStatus: data, error: { ...set.getState().error, systemStatus: null } }),
+  setOverview: (data) => set({ overview: data, error: { ...get().error, overview: null } }),
+  setModelPerformance: (data) => set({ modelPerformance: data, error: { ...get().error, modelPerformance: null } }),
+  setAlerts: (data) => set({ alerts: data, error: { ...get().error, alerts: null } }),
+  setSystemStatus: (data) => set({ systemStatus: data, error: { ...get().error, systemStatus: null } }),
   setLoading: (key, loading) =>
     set((state) => ({ loading: { ...state.loading, [key]: loading } })),
   setError: (key, error) =>

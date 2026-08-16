@@ -61,6 +61,7 @@ interface MetricCardProps {
   change?: string;
   changeType?: 'positive' | 'negative' | 'neutral';
   icon?: ReactNode;
+  color?: string;
   className?: string;
 }
 
@@ -70,6 +71,7 @@ export function MetricCard({
   change, 
   changeType = 'neutral', 
   icon, 
+  color = '#5C4033',
   className 
 }: MetricCardProps) {
   return (
@@ -77,7 +79,7 @@ export function MetricCard({
       <div className="flex items-start justify-between">
         <div>
           <p className="text-brown-500 text-sm font-medium">{label}</p>
-          <p className="text-brown-800 text-2xl font-bold mt-1">{value}</p>
+          <p className="text-2xl font-bold mt-1" style={{ color }}>{value}</p>
         </div>
         {icon && <div className="text-brown-300">{icon}</div>}
       </div>

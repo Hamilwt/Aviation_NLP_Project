@@ -5,7 +5,11 @@ import { cn } from '@/utils/helpers';
 import { useUIStore } from '@/store';
 import { Toaster } from 'react-hot-toast';
 
-export function Layout() {
+interface LayoutProps {
+  children?: React.ReactNode;
+}
+
+export function Layout({ children }: LayoutProps) {
   const { sidebarOpen } = useUIStore();
 
   return (
@@ -18,7 +22,7 @@ export function Layout() {
       )}>
         <Header />
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
-          <Outlet />
+          {children ?? <Outlet />}
         </main>
       </div>
       <Toaster
