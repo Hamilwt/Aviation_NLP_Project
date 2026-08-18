@@ -25,6 +25,9 @@ def run_cmd(cmd, cwd=None, shell=True, background=False):
         processes.append(proc)
         return proc
     else:
+        # Ensure command is properly quoted for paths with spaces
+        if isinstance(cmd, list):
+            cmd = " ".join(f'"{c}"' if " " in c else c for c in cmd)
         return subprocess.run(cmd, cwd=cwd, shell=shell, check=True)
 
 def check_artifacts():
@@ -50,34 +53,29 @@ def start_backend():
     
     # Determine python executable
     if sys.platform == "win32":
-        python_exe = venv_dir / "Scripts" / "python.exe"
-        activate = str(venv_dir / "Scripts" / "activate")
+        python_exe = str(venv_dir / "Scripts" / "python.exe")
     else:
-        python_exe = venv_dir / "bin" / "python"
-        activate = f"source {venv_dir}/bin/activate"
+        python_exe = str(venv_dir / "bin" / "python")
     
-    # Install deps
-    run_cmd(f"{python_exe} -m pip install -r requirements.txt", cwd=BACKEND_DIR)
+    # Install deps using list form to avoid quoting issues
+    subprocess.run([python_exe, "-m", "pip", "install", "-r", "requirements.txt"], cwd=BACKEND_DIR, check=True)
     
     # Download NLTK data
-    run_cmd(f"{python_exe} -c \"import nltk; nltk.download('punkt', quiet=True); nltk.download('stopwords', quiet=True); nltk.download('wordnet', quiet=True); nltk.download('punkt_tab', quiet=True)\"", cwd=BACKEND_DIR)
+    subprocess.run([python_exe, "-c", 
+        "import nltk; nltk.download('punkt', quiet=True); nltk.download('stopwords', quiet=True); nltk.download('wordnet', quiet=True); nltk.download('punkt_tab', quiet=True)"], 
+        cwd=BACKEND_DIR, check=True)
     
     # Start uvicorn in background
+    uvicorn_cmd = [python_exe, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     if sys.platform == "win32":
-        # Windows: use start to open new window
-        subprocess.Popen(
-            ["cmd", "/k", f"{activate} && python -m uvicorn main:app --host 0.0.0.0 --port 8000"],
-            cwd=BACKEND_DIR
-        )
+        # Windows: use cmd /k to keep window open
+        subprocess.Popen(["cmd", "/k"] + uvicorn_cmd, cwd=BACKEND_DIR)
     else:
         # Linux/Mac: background process
-        proc = subprocess.Popen(
-            ["bash", "-c", f"{activate} && python -m uvicorn main:app --host 0.0.0.0 --port 8000"],
-            cwd=BACKEND_DIR
-        )
+        proc = subprocess.Popen(uvicorn_cmd, cwd=BACKEND_DIR)
         processes.append(proc)
     
-    print("✓ Backend starting on http://localhost:8000")
+    print("[OK] Backend starting on http://localhost:8000")
 
 def start_frontend():
     """Start React frontend."""
@@ -101,7 +99,7 @@ def start_frontend():
         )
         processes.append(proc)
     
-    print("✓ Frontend starting on http://localhost:5173")
+    print("[OK] Frontend starting on http://localhost:5173")
 
 def wait_for_backend():
     """Wait for backend to be ready."""
@@ -129,7 +127,7 @@ def main():
         print("ML artifacts not found. Running pipeline first...")
         install_pipeline()
     else:
-        print("✓ ML artifacts found")
+        print("[OK] ML artifacts found")
     
     # Start services
     start_backend()
