@@ -10,8 +10,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 # Register the pipeline root on sys.path so sibling modules (config,
-# preprocessor, src.*) resolve regardless of the process working directory
-# (e.g. when launched via `streamlit run`).
+# preprocessor, src.*) resolve regardless of the process working directory.
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -130,7 +129,7 @@ MODEL_PATH = DATA_DIR / "safety_model.pkl"
 VECTORIZER_PATH = DATA_DIR / "tfidf_vectorizer.pkl"
 TRAIN_CONFIG_PATH = DATA_DIR / "training_config.json"
 
-# Persisted evaluation outputs (consumed by the Streamlit dashboard)
+# Persisted evaluation outputs consumed by the dashboard and report generator
 CLASSIFICATION_REPORT_TXT = DATA_DIR / "classification_report.txt"
 CLASSIFICATION_REPORT_CSV = DATA_DIR / "classification_report.csv"
 METRICS_JSON = DATA_DIR / "metrics.json"

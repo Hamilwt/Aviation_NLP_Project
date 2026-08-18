@@ -21,7 +21,6 @@ OVERVIEW = ROOT / "PROJECT_OVERVIEW.txt"
 CODE_FILES = [
     "safety_nlp_pipeline/main.py",
     "safety_nlp_pipeline/config.py",
-    "safety_nlp_pipeline/app_streamlit.py",
     "safety_nlp_pipeline/src/__init__.py",
     "safety_nlp_pipeline/src/data_fetcher.py",
     "safety_nlp_pipeline/src/preprocessor.py",
@@ -32,7 +31,22 @@ CODE_FILES = [
     "safety_nlp_pipeline/src/monitor.py",
     "safety_nlp_pipeline/src/report_generator.py",
     "safety_nlp_pipeline/requirements.txt",
-    "safety_nlp_pipeline/.streamlit/config.toml",
+    "aviation-safety-app/backend/main.py",
+    "aviation-safety-app/backend/config.py",
+    "aviation-safety-app/backend/ml_service.py",
+    "aviation-safety-app/backend/ollama_service.py",
+    "aviation-safety-app/backend/schemas.py",
+    "aviation-safety-app/backend/suggestions.py",
+    "aviation-safety-app/backend/requirements.txt",
+    "aviation-safety-app/frontend/src/App.tsx",
+    "aviation-safety-app/frontend/src/api/client.ts",
+    "aviation-safety-app/frontend/src/hooks/useApi.ts",
+    "aviation-safety-app/frontend/src/pages/OverviewPage.tsx",
+    "aviation-safety-app/frontend/src/pages/PerformancePage.tsx",
+    "aviation-safety-app/frontend/src/pages/AlertsPage.tsx",
+    "aviation-safety-app/frontend/src/pages/AssistantPage.tsx",
+    "aviation-safety-app/frontend/src/pages/SystemPage.tsx",
+    "aviation-safety-app/frontend/package.json",
 ]
 
 ACCENT = RGBColor(0x0F, 0x6B, 0x9E)
@@ -154,8 +168,8 @@ def main():
         "HTML report (model metrics, confusion matrix, RAG evidence, data quality insights). "
         "A modern React + FastAPI web dashboard (aviation-safety-app/) gives full visual "
         "control over every pipeline stage, with local Ollama LLM integration and "
-        "auto-generated safety suggestions. A legacy Streamlit dashboard is preserved for "
-        "offline / command-line workflows."
+        "auto-generated safety suggestions. The React application is the active user interface "
+        "for the project; Streamlit is no longer part of the supported deployment."
     )
 
     doc.add_heading("1.1 Key features", level=2)
@@ -170,7 +184,7 @@ def main():
         "Local Ollama LLM integration: domain-constrained chat for the Data Assistant (no API key required), with rule-based pandas analyst as a fallback.",
         "Auto-generated safety suggestions per alert: NLP keyword extraction in backend/suggestions.py, surfaced in the Live Alerts page.",
         "One-click launcher scripts (start.py, start_app.bat, start_app.sh, start_app.ps1) to install dependencies and start backend + frontend in one go.",
-        "Legacy Streamlit dashboard (app_streamlit.py) preserved for offline / CLI workflows.",
+        "React-only interface: the supported UI is the Vite + React dashboard; no Streamlit dashboard is used in the current delivery.",
         "Real-time incident monitoring & alerting (src/monitor.py): ingests new reports as they arrive, classifies on-the-fly, scores risk (critical/high/medium) and raises alerts with RAG evidence - from a watched folder, appended dataset rows, the live NTSB aviation feed and the UK Power Networks live-faults feed.",
         "Alert de-duplication survives restarts (data/monitor_state.json), and the Live Alerts page color-codes critical/high rows and shows RAG evidence per alert.",
         "Keyless data assistant (no LLM/API key): data-quality issues, class balance, domain split, safety-criticality breakdown and risk-phrase scanning with pandas.",
@@ -200,12 +214,10 @@ def main():
         "        |   6 pages: Overview / Performance / RAG / Assistant / Alerts / System\n"
         "        |   local Ollama LLM (no API key) + auto-generated safety suggestions\n"
         "        |\n"
-        "  [Web] LEGACY STREAMLIT DASHBOARD (app_streamlit.py)\n"
-        "        |\n"
         "  [MON] REAL-TIME MONITOR & ALERTER (src/monitor.py, python -m src.monitor)\n"
         "        |   watches new_incidents/ + appended dataset rows + live NTSB / UKPN feeds\n"
         "        |   -> classify on-the-fly -> risk score -> alert with RAG evidence\n"
-        "        `-> data/alerts.csv -> React Live Alerts page + Streamlit 'Live Alerts' tab"
+        "        `-> data/alerts.csv -> React Live Alerts page"
     )
     add_code_block(doc, arch)
 
@@ -235,9 +247,7 @@ def main():
         "# Frontend (separate terminal):\n"
         "cd ../frontend && npm install && npm run dev\n"
         "# http://localhost:5173   |   API: http://localhost:8000/docs\n\n"
-        "# 3. Legacy Streamlit dashboard (optional)\n"
-        "streamlit run app_streamlit.py        # web dashboard (http://localhost:8501)\n\n"
-        "# 4. Real-time monitoring & alerting:\n"
+        "# 3. Real-time monitoring & alerting:\n"
         "python -m src.monitor                 # continuous monitor (needs trained model)\n"
         "python -m src.monitor --once --no-api # single scan, no live feeds\n"
         "python main.py --monitor --poll 30    # train, then start monitoring\n\n"
@@ -279,8 +289,6 @@ def main():
         "    |-- config.py              all parameters (paths, model settings, ...)\n"
         "    |-- main.py                single entry point - runs the full pipeline\n"
         "    |-- MONITOR_GUIDE.md       detailed monitor & alerting documentation\n"
-        "    |-- app_streamlit.py       Legacy Streamlit web dashboard (still functional)\n"
-        "    |-- .streamlit/config.toml dashboard theme configuration\n"
         "    |-- src/\n"
         "    |   |-- data_fetcher.py    downloads ASRS (HF) + NERC (PDFs) -> CSV\n"
         "    |   |-- preprocessor.py    NLTK tokenization, stopwords, lemmatization\n"
@@ -328,8 +336,7 @@ def main():
         "requests>=2.31      HTTP downloads (HF datasets-server + NERC PDFs)\n"
         "matplotlib>=3.8     Confusion matrix & class distribution plots\n"
         "seaborn>=0.13       Heatmap rendering\n"
-        "jinja2>=3.1         HTML report templates\n"
-        "streamlit>=1.37     Legacy Streamlit dashboard (still functional)\n\n"
+        "jinja2>=3.1         HTML report templates\n\n"
         "Backend API (aviation-safety-app/backend/):\n"
         "fastapi==0.115.0, uvicorn[standard]==0.34.0, pydantic==2.10.6,\n"
         "pydantic-settings==2.9.0, python-multipart==0.0.9, python-dotenv==1.0.1,\n"

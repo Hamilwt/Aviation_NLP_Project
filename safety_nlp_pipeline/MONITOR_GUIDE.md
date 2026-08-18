@@ -4,7 +4,7 @@
 
 The **monitor** (`src/monitor.py`) turns the batch pipeline into a **proactive decision-support service**. It continuously ingests new incident reports, classifies them on-the-fly with the trained model, scores their risk level (**critical / high / medium / low**), retrieves RAG evidence from similar past incidents, and raises alerts — all without human intervention.
 
-Alerts are written to `data/alerts.csv` and displayed live in the **React + FastAPI Live Alerts page** (recommended) with color-coded rows, auto-generated safety suggestions and per-alert RAG evidence. The legacy Streamlit dashboard's *Live Alerts* tab is also supported.
+Alerts are written to `data/alerts.csv` and displayed live in the **React + FastAPI Live Alerts page** with color-coded rows, auto-generated safety suggestions and per-alert RAG evidence.
 
 ---
 
@@ -50,10 +50,11 @@ printf 'id,narrative\nDEMO-001,Engine fire at FL350, declared emergency, dumping
   python start.py          # or use start_app.bat / .sh / .ps1 from the repo root
   # open http://localhost:5173  ->  "Live Alerts" page
   ```
-- **Legacy Streamlit dashboard:**
+- **React + FastAPI dashboard:**
   ```bash
-  streamlit run app_streamlit.py
-  # open http://localhost:8501  ->  "Live Alerts" tab
+  cd ../aviation-safety-app
+  python start.py
+  # open http://localhost:5173  ->  "Live Alerts" page
   ```
 
 ---
@@ -165,8 +166,7 @@ Result priority: triggers -> label -> vocab -> medium.
    | `narrative`       | snippet (first `MONITOR_ALERT_SNIPPET` chars)                        |
    | `evidence_json`   | JSON array of RAG evidence dicts                                     |
 6. **Display**:
-   - React dashboard: Live Alerts page (recommended) with category tabs, color-coded risk badges, auto-generated safety suggestions and expandable RAG evidence.
-   - Streamlit: Live Alerts tab reads `alerts.csv`, parses `evidence_json`, shows color-coded table + expanders with evidence.
+- **React dashboard: Live Alerts page with category tabs, color-coded risk badges, auto-generated safety suggestions and expandable RAG evidence.
 
 ---
 
@@ -194,8 +194,11 @@ A monitor **restart never re-alerts** on already-processed incidents.
 - **Auto-generated safety suggestions** per alert (NLP keyword extraction in `aviation-safety-app/backend/suggestions.py`).
 - **Expandable alert details** with RAG evidence and similarity bars.
 
-### Legacy Streamlit "Live Alerts" tab
+### Legacy Streamlit "Live Alerts" tab [DEPRECATED]
 
+⚠️ **Deprecated** — Use the **React + FastAPI dashboard** instead (see recommended section above).
+
+For historical reference:
 - **Metrics row**: Critical / High / Medium counts + Total.
 - **Table** (most recent 50): color-coded rows (red = critical, yellow = high).
 - **Evidence expanders** (top 5): RAG evidence with similarity bars, same style as RAG Explorer tab.
@@ -264,16 +267,18 @@ monitor._save_state(state)
 # Should print counts > 0 and raise alerts to alerts.csv
 ```
 
-### 4. Streamlit AppTest (automated)
+### 4. Dashboard Testing
 
+**React + FastAPI** is tested via standard HTTP client tests (e.g., pytest + httpx).
+
+**Legacy Streamlit** (deprecated) can be tested with:
 ```bash
 python -c "
 from streamlit.testing.v1 import AppTest
 at = AppTest.from_file('app_streamlit.py', default_timeout=300)
 at.run()
 assert len(at.exception) == 0
-assert len(at.tabs) == 5  # includes Live Alerts
-print('DASHBOARD OK')
+print('Streamlit app loads OK')
 "
 ```
 
@@ -307,7 +312,7 @@ Tune these for your environment (e.g., lower `UKPN_POLL_SECONDS` for faster reac
 | No alerts from UKPN                              | All recent records are `Planned` or `Restored`    | Normal — only `Unplanned` cuts are incidents.                                                  |
 | Duplicate alerts after restart                   | State file missing / corrupted                    | Check `data/monitor_state.json` exists and is valid JSON.                                      |
 | `ModuleNotFoundError: config`                    | Running from wrong directory                      | Run from `safety_nlp_pipeline/` root.                                                          |
-| `use_container_width` deprecation warnings       | Streamlit >= 1.37                                 | Harmless; dashboard works.                                                                     |
+| `use_container_width` deprecation warnings       | Legacy Streamlit >= 1.37                          | Only appears in legacy Streamlit; use React app instead.                                       |
 | pypdf `CryptographyDeprecationWarning`           | ARC4 deprecation                                  | Harmless; PDF extraction works.                                                                |
 
 ---

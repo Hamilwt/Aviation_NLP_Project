@@ -5,14 +5,11 @@ The real-time monitor (src/monitor.py) watches this folder. Drop any file
 with a .csv or .txt extension here and it will be picked up on the next scan,
 classified, risk-scored and logged to data/alerts.csv.
 
-You can then view alerts in either of the supported dashboards:
-  - React + FastAPI dashboard (recommended):
+You can then view alerts in the supported dashboard:
+  - React + FastAPI dashboard:
       cd ../../aviation-safety-app
       python start.py          # or start_app.bat / .sh / .ps1 from the repo root
       open http://localhost:5173  -> "Live Alerts" page
-  - Legacy Streamlit dashboard:
-      streamlit run app_streamlit.py
-      open http://localhost:8501  -> "Live Alerts" tab
 
 
 CSV format (recommended)

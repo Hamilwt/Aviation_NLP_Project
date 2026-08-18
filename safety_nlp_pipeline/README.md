@@ -17,7 +17,7 @@ Then open `reports/pipeline_report.html` in any browser.
 
 ---
 
-## 🌐 Web Dashboards
+## 🌐 Web Dashboard
 
 ### Modern React + FastAPI Dashboard (Recommended)
 ```bash
@@ -34,21 +34,6 @@ start_app.bat                        # Windows cmd
 - **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
-
-### Legacy Streamlit Dashboard (Deprecated)
-> Still functional and supported for offline use, but the React + FastAPI dashboard above is the recommended interface.
-```bash
-streamlit run app_streamlit.py      # opens http://localhost:8501
-```
-
-| Tab | Content |
-|-----|---------|
-| Overview | dataset size, domain split, class-distribution chart, sample rows |
-| Model Performance | metrics, per-class classification table, confusion-matrix & distribution plots |
-| RAG Explorer | paste an incident → predicted class + top-3 evidence with similarity bars |
-| Data Assistant | keyless quality / safety / class insights and risk-phrase scanning |
-| Live Alerts | alerts raised by the monitor: color-coded table + RAG evidence expanders |
-| System Control | manage pipeline/monitor processes, view logs, run pipeline |
 
 ---
 
@@ -172,9 +157,9 @@ safety_nlp_pipeline/
 ├── requirements.txt             # Python dependencies
 ├── config.py                    # All parameters (paths, model settings, ...)
 ├── main.py                      # Single entry point - runs the full pipeline
-├── app_streamlit.py             # Legacy Streamlit web dashboard (deprecated)
-├── .streamlit/
-│   └── config.toml              # Dashboard theme configuration
+├── app_streamlit.py             # Legacy Streamlit web dashboard (deprecated; use React app instead)
+├── .streamlit/                  # Streamlit config (legacy; not used)
+│   └── config.toml
 ├── src/
 │   ├── __init__.py
 │   ├── data_fetcher.py          # Downloads ASRS (HF) + NERC (PDFs) -> CSV
@@ -237,7 +222,6 @@ requests>=2.31
 matplotlib>=3.8
 seaborn>=0.13
 jinja2>=3.1
-streamlit>=1.37
 textual>=8.2
 python-docx>=1.1
 ```

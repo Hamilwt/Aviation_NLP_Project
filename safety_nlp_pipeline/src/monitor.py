@@ -4,7 +4,7 @@ Turns the batch pipeline into a proactive decision-support system. It
 continuously ingests new incident reports, classifies them on-the-fly with the
 trained model, scores their risk level, retrieves RAG evidence from similar
 past incidents and raises alerts (logged to ``data/alerts.csv`` and shown in
-the Streamlit "Live Alerts" tab).
+the React dashboard's Live Alerts page).
 
 Four ingestion sources (all optional, all fault-tolerant):
 

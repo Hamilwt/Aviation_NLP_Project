@@ -300,8 +300,13 @@ Summary:
   Core Pipeline (safety_nlp_pipeline/):
     pandas>=2.2, scikit-learn>=1.5, datasets>=3.0, joblib>=1.4,
     nltk>=3.8, pypdf>=4.0, requests>=2.31, matplotlib>=3.8,
-    seaborn>=0.13, jinja2>=3.1, streamlit>=1.37
-    (textual is OPTIONAL - only the legacy Textual TUI at app.py uses it)
+    seaborn>=0.13, jinja2>=3.1
+    
+    Optional (legacy Streamlit dashboard):
+    streamlit>=1.37
+    
+    Optional (legacy Textual terminal UI):
+    textual>=8.2
 
   Backend API (aviation-safety-app/backend/):
     fastapi==0.115.0, uvicorn[standard]==0.34.0, pydantic==2.10.6,
@@ -327,7 +332,7 @@ Summary:
 Aviation_NLP_Project/
 |-- start.py, start_app.bat / .sh / .ps1   one-click launchers
 |-- make_report.py                          builds Aviation_NLP_Pipeline_Report.docx
-|-- app.py, pipeline/                       legacy Textual TUI (kept as a developer tool)
+|-- app.py, pipeline/                       legacy Textual TUI (kept as developer tool only)
 |-- Aviation_NLP_Pipeline_Report.docx       generated DOCX report (run make_report.py)
 |-- Research Document AI Applications...docx supporting research material
 |-- _research_extract.txt, _tables_extract.txt  text/table extracts from the research doc
@@ -372,7 +377,7 @@ Aviation_NLP_Project/
 |   |-- main.py
 |   |-- config.py
 |   |-- MONITOR_GUIDE.md
-|   |-- app_streamlit.py                    Legacy Streamlit (deprecated, still functional)
+|   |-- app_streamlit.py                    Legacy Streamlit (deprecated; use React web app)
 |   |-- new_incidents/                      Drop-in folder for new CSV/TXT reports
 |   `-- requirements.txt
 |
