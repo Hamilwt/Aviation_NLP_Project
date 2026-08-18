@@ -100,7 +100,7 @@ export function Sidebar() {
         {/* Footer */}
         <div className="p-3 border-t border-cream-300">
           <div className="flex items-center justify-between px-3 py-2 text-xs text-brown-500">
-            <span>v2.0.0</span>
+            <span>v2.1.0</span>
             <span className="flex items-center gap-1">
               <span className={cn('w-2 h-2 rounded-full', theme === 'dark' ? 'bg-gray-400' : 'bg-brown-300')} />
               <span>{theme}</span>

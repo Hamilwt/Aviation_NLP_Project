@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     UKPN_POLL_SECONDS: int = 60
     ALERT_HIGH_MIN_CUSTOMERS: int = 100
     
+    # Ollama (local LLM) integration
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3"
+    OLLAMA_TIMEOUT: int = 120
+    OLLAMA_STATUS_TTL: int = 10
+    
     # Logging
     LOG_LEVEL: str = "INFO"
     

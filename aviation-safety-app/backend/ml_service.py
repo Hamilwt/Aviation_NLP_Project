@@ -21,8 +21,29 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_sp
 from sklearn.pipeline import Pipeline
 
 from config import settings, COLUMN_ALIASES, NARRATIVE_COL, LABEL_COL, DOMAIN_COL, PROCESSED_COL
+from suggestions import generate_suggestion, build_alerts_summary
 
 logger = logging.getLogger(__name__)
+
+_NLTK_ENSURED = False
+
+
+def _ensure_nltk_data():
+    """Download NLTK corpora on first use (idempotent, never raises)."""
+    global _NLTK_ENSURED
+    if _NLTK_ENSURED:
+        return
+    _NLTK_ENSURED = True
+    try:
+        import nltk
+        for name in ("punkt", "punkt_tab", "stopwords", "wordnet"):
+            try:
+                nltk.data.find(f"tokenizers/{name}" if name.startswith("punkt")
+                               else f"corpora/{name}")
+            except LookupError:
+                nltk.download(name, quiet=True)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Could not ensure NLTK data: %s", exc)
 
 # Risk keywords (from analyst.py)
 CRITICAL_KEYWORDS = [
@@ -93,6 +114,7 @@ class MLService:
     
     def load_artifacts(self) -> bool:
         """Load all model artifacts. Returns True if successful."""
+        _ensure_nltk_data()
         try:
             if not settings.DATASET_PATH.exists():
                 logger.warning("Dataset not found at %s", settings.DATASET_PATH)
@@ -102,38 +124,47 @@ class MLService:
                 return False
             
             logger.info("Loading dataset...")
-            self._df = pd.read_csv(settings.DATASET_PATH)
+            df = pd.read_csv(settings.DATASET_PATH)
             
             # Normalize column names using aliases
-            self._df = self._df.rename(columns=COLUMN_ALIASES)
+            df = df.rename(columns=COLUMN_ALIASES)
             # Keep only canonical columns if they exist
-            canonical_cols = [c for c in [NARRATIVE_COL, LABEL_COL, DOMAIN_COL] if c in self._df.columns]
-            self._df = self._df[canonical_cols].copy()
+            canonical_cols = [c for c in [NARRATIVE_COL, LABEL_COL, DOMAIN_COL] if c in df.columns]
+            df = df[canonical_cols].copy()
             
             logger.info("Loading model and vectorizer...")
-            self._model = joblib.load(settings.MODEL_PATH)
-            self._vectorizer = joblib.load(settings.VECTORIZER_PATH)
+            model = joblib.load(settings.MODEL_PATH)
+            vectorizer = joblib.load(settings.VECTORIZER_PATH)
+            
+            # Load remaining artifacts BEFORE publishing state, so partial
+            # loads never look "ready" (avoids 404/503 races on the dashboard).
+            training_config = None
+            metrics = None
+            classification_report_df = None
+            if settings.TRAIN_CONFIG_PATH.exists():
+                with open(settings.TRAIN_CONFIG_PATH) as f:
+                    training_config = json.load(f)
+            if settings.METRICS_JSON.exists():
+                with open(settings.METRICS_JSON) as f:
+                    metrics = json.load(f)
+            if settings.CLASSIFICATION_REPORT_CSV.exists():
+                classification_report_df = pd.read_csv(
+                    settings.CLASSIFICATION_REPORT_CSV, index_col=0
+                )
+            
+            # Publish state atomically
+            self._df = df
+            self._model = model
+            self._vectorizer = vectorizer
+            self._training_config = training_config
+            self._metrics = metrics
+            self._classification_report_df = classification_report_df
+            self._index_vectors = None
             
             logger.info("Building RAG index...")
             self._index_vectors = self._build_index()
             
-            # Load training config
-            if settings.TRAIN_CONFIG_PATH.exists():
-                with open(settings.TRAIN_CONFIG_PATH) as f:
-                    self._training_config = json.load(f)
-            
-            # Load metrics
-            if settings.METRICS_JSON.exists():
-                with open(settings.METRICS_JSON) as f:
-                    self._metrics = json.load(f)
-            
-            # Load classification report
-            if settings.CLASSIFICATION_REPORT_CSV.exists():
-                self._classification_report_df = pd.read_csv(
-                    settings.CLASSIFICATION_REPORT_CSV, index_col=0
-                )
-            
-            logger.info("All artifacts loaded successfully (%d reports)", len(self._df))
+            logger.info("All artifacts loaded successfully (%d reports)", len(df))
             return True
             
         except Exception as e:
@@ -168,6 +199,18 @@ class MLService:
             self._vectorizer is not None,
             self._df is not None,
             self._index_vectors is not None,
+        ])
+
+    def is_data_ready(self) -> bool:
+        """True when dataset + model + vectorizer are loaded (RAG index optional).
+
+        Overview and model-performance pages only need the dataset and model;
+        the RAG index is only required for classification with evidence.
+        """
+        return all([
+            self._model is not None,
+            self._vectorizer is not None,
+            self._df is not None,
         ])
     
     def preprocess_text(self, text: str) -> str:
@@ -390,12 +433,12 @@ class MLService:
     def get_alerts(self, limit: int = 50) -> Dict[str, Any]:
         """Get alerts from the alert log."""
         if not settings.ALERT_LOG_PATH.exists():
-            return {"counts": {}, "alerts": [], "total": 0}
+            return {"counts": {}, "alerts": [], "total": 0, "summary": ""}
         
         try:
             alerts_df = pd.read_csv(settings.ALERT_LOG_PATH)
             if alerts_df.empty:
-                return {"counts": {}, "alerts": [], "total": 0}
+                return {"counts": {}, "alerts": [], "total": 0, "summary": ""}
             
             alerts_df["timestamp"] = pd.to_datetime(alerts_df["timestamp"], errors="coerce")
             alerts_df = alerts_df.sort_values("timestamp", ascending=False)
@@ -410,13 +453,17 @@ class MLService:
             
             alerts = []
             for _, row in recent.iterrows():
+                risk_level = str(row["risk_level"]).lower()
+                narrative = str(row["narrative"])
+                predicted_label = str(row["predicted_label"])
                 alerts.append({
                     "timestamp": str(row["timestamp"]),
                     "incident_id": str(row["incident_id"]),
                     "source": str(row["source"]),
-                    "risk_level": str(row["risk_level"]),
-                    "predicted_label": str(row["predicted_label"]),
-                    "narrative": str(row["narrative"]),
+                    "risk_level": risk_level,
+                    "predicted_label": predicted_label,
+                    "narrative": narrative,
+                    "suggestion": generate_suggestion(narrative, predicted_label, risk_level),
                     "evidence": [
                         {
                             "rank": ev.get("rank", 0),
@@ -428,7 +475,8 @@ class MLService:
                     ]
                 })
             
-            return {"counts": counts, "alerts": alerts, "total": len(alerts_df)}
+            return {"counts": counts, "alerts": alerts, "total": len(alerts_df),
+                    "summary": build_alerts_summary(alerts, len(alerts_df))}
             
         except Exception as e:
             logger.error("Failed to load alerts: %s", e)
@@ -484,11 +532,11 @@ class MLService:
                 self.load_artifacts()
                 
                 artifacts = {
-                    "dataset": str(settings.DATASET_PATH),
-                    "model": str(settings.MODEL_PATH),
-                    "vectorizer": str(settings.VECTORIZER_PATH),
-                    "report": str(settings.REPORTS_DIR / "pipeline_report.html"),
-                    "metrics": str(settings.METRICS_JSON),
+                    "dataset": settings.DATASET_PATH.name,
+                    "model": settings.MODEL_PATH.name,
+                    "vectorizer": settings.VECTORIZER_PATH.name,
+                    "report": settings.REPORTS_DIR.name + "/pipeline_report.html",
+                    "metrics": settings.METRICS_JSON.name,
                 }
                 
                 return {

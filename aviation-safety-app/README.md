@@ -1,6 +1,6 @@
 # Safety NLP Pipeline - Web Dashboard
 
-A modern, cross-platform React + FastAPI dashboard for the Aviation & Power-Grid Safety NLP Pipeline. Full web-based control of all NLP processes with rich visualizations.
+A modern, cross-platform React + FastAPI dashboard for the Aviation & Power-Grid Safety NLP Pipeline. Full web-based control of all NLP processes with rich visualizations, **local Ollama LLM integration**, and **auto-generated safety suggestions**.
 
 ## ✨ Features
 
@@ -9,15 +9,16 @@ A modern, cross-platform React + FastAPI dashboard for the Aviation & Power-Grid
 | **Overview** | Dataset statistics, domain distribution, class charts with interactive visualizations |
 | **Model Performance** | Metrics, confusion matrix, per-class reports with bar charts and progress bars |
 | **RAG Explorer** | Classify narratives + retrieve similar historical reports as evidence |
-| **Data Assistant** | Keyless pandas analysis (quality, safety, class balance, risk phrases) |
-| **Live Alerts** | Real-time incident monitoring with risk scoring, filters, and evidence |
-| **System Control** | Process management, pipeline execution with real-time progress tracking |
+| **Data Assistant** | **Local Ollama LLM** (domain-constrained) + rule-based analyst fallback; model selector |
+| **Live Alerts** | Real-time incident monitoring with risk scoring, **critical/high/medium/low categories**, **auto-generated safety suggestions**, evidence |
+| **System Control** | Process management, pipeline execution with real-time progress tracking, **sanitized paths** |
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Python 3.11+
 - Node.js 20+
+- **Ollama** (optional, for LLM-powered Data Assistant): `ollama serve && ollama pull llama3`
 - Run the original pipeline first to generate artifacts:
   ```bash
   cd ../safety_nlp_pipeline
@@ -59,17 +60,19 @@ aviation-safety-app/
 ├── backend/                   # FastAPI REST API
 │   ├── main.py               # API endpoints (all 6 pages + system control)
 │   ├── ml_service.py         # ML pipeline wrapper with progress tracking
-│   ├── config.py             # Pydantic settings
+│   ├── config.py             # Pydantic settings (incl. Ollama)
 │   ├── schemas.py            # Pydantic models (request/response)
+│   ├── ollama_service.py     # Ollama client with domain-constrained chat
+│   ├── suggestions.py        # Auto-generated safety suggestions for alerts
 │   └── requirements.txt      # Python dependencies
 ├── frontend/                 # React + TypeScript + Vite
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── charts/       # Recharts components (Bar, Pie, Line, Progress)
-│   │   │   ├── layout/       # Sidebar, Header, Layout
+│   │   │   ├── layout/       # Sidebar, Header, Layout, **StatusBar**
 │   │   │   └── ui/           # Card, Button, Input, Table, Badge, MetricCard
 │   │   ├── pages/            # 6 dashboard pages
-│   │   ├── hooks/            # Custom React hooks (useApi)
+│   │   ├── hooks/            # Custom React hooks (useApi, useOllamaStatus)
 │   │   ├── store/            # Zustand state management
 │   │   ├── api/              # Axios client
 │   │   ├── types/            # TypeScript types
@@ -85,12 +88,13 @@ aviation-safety-app/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/health` | Health check |
+| GET | `/api/health` | Health check (includes Ollama status) |
 | GET | `/api/overview` | Dataset statistics |
 | GET | `/api/model-performance` | Model metrics & reports |
 | POST | `/api/classify` | Classify narrative with RAG evidence |
-| POST | `/api/analyze` | Data assistant queries |
-| GET | `/api/alerts` | Live alerts with filters |
+| POST | `/api/analyze` | Data Assistant (Ollama LLM + fallback) |
+| GET | `/api/ollama/status` | Ollama connection + live models |
+| GET | `/api/alerts` | Live alerts with risk categories + suggestions |
 | GET | `/api/system/status` | Service status & logs |
 | POST | `/api/system/control/{service}/{action}` | Start/stop/restart services |
 | POST | `/api/pipeline/run` | Execute full pipeline with progress |
@@ -98,6 +102,7 @@ aviation-safety-app/
 | POST | `/api/pipeline/fetch` | Fetch data only |
 | POST | `/api/pipeline/train` | Train model only |
 | POST | `/api/monitor/control` | Monitor control |
+| POST | `/api/ml/load-artifacts` | Manually load ML artifacts |
 
 ## 🎨 Visualization Components
 
@@ -111,9 +116,13 @@ aviation-safety-app/
 ### DataDisplay.tsx
 - **Card** - Consistent card layout
 - **Table** - Sortable, striped tables with custom renderers
-- **Badge** - Status badges (success, warning, error, info, critical, high, medium)
-- **StatGrid** - Responsive metric grid
-- **Section** - Page sections with headers
+- **Badge** - Status badges (success, warning, error, info, critical, high, medium, low)
+- **StatGrid** - Responsive metric grid (1-5 columns)
+- **Section** - Page sections with headers (flex-wrap for alignment)
+
+### New UI Components
+- **StatusBar** - Bottom-fixed bar: Ollama connection, live model count, active model
+- **Improved Layout** - Fixed double-scroll issue, proper `h-screen overflow-hidden` root
 
 ## 🎯 Key Features
 
@@ -124,7 +133,7 @@ aviation-safety-app/
 
 ### Interactive Charts
 - Hover tooltips with formatted values
-- Color-coded risk levels (critical=red, high=orange, medium=green)
+- Color-coded risk levels (critical=red, high=orange, medium=yellow, low=green)
 - Responsive design for all screen sizes
 
 ### Full Web Control
@@ -133,11 +142,28 @@ aviation-safety-app/
 - View real-time logs with filtering
 - Run individual pipeline stages
 
-### Live Alerts Dashboard
-- Risk level filtering (critical/high/medium)
+### Live Alerts Dashboard (Enhanced)
+- Risk level filtering (critical/high/medium/low)
 - Source filtering
+- **Category tabs with counts** (All/Critical/High/Medium/Low)
+- **Auto-generated safety suggestions** per alert (NLP keyword extraction)
 - Expandable alert details with RAG evidence
 - Timeline and source distribution charts
+
+### Data Assistant with Local LLM (New)
+- **Ollama integration** — zero API key, fully private inference
+- **Domain-constrained system prompt** — answers ONLY aviation/power-grid safety questions
+- Out-of-domain questions politely refused
+- **Model selector** — pick any live Ollama model
+- **Rule-based fallback** — works without Ollama (pandas analyst)
+- Source badge: "Ollama LLM" vs "Rule-based analyst"
+
+### Status Bar (New)
+- Fixed bottom bar
+- Ollama connectivity: green "Connected" / red "Disconnected"
+- Live model count + active model name
+- Backend health indicator
+- App version
 
 ## 🛠️ Development
 
@@ -165,6 +191,8 @@ joblib==1.4.2
 pandas==2.2.3
 scikit-learn==1.6.1
 nltk==3.9.1
+httpx==0.28.1
+websockets==13.1
 ```
 
 ### Frontend
@@ -189,6 +217,12 @@ API_HOST=0.0.0.0
 API_PORT=8000
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
 LOG_LEVEL=INFO
+
+# Ollama (local LLM)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3
+OLLAMA_TIMEOUT=120
+OLLAMA_STATUS_TTL=10
 ```
 
 ## 📄 License

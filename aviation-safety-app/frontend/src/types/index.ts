@@ -44,15 +44,28 @@ export interface ModelPerformanceResponse {
 
 export interface DataAssistantResponse {
   lines: string[];
+  reply?: string;
+  used_llm?: boolean;
+  model?: string | null;
+  ollama_connected?: boolean;
+}
+
+export interface OllamaStatus {
+  connected: boolean;
+  base_url: string;
+  model: string;
+  models: string[];
+  default_model: string;
 }
 
 export interface AlertItem {
   timestamp: string;
   incident_id: string;
   source: string;
-  risk_level: 'critical' | 'high' | 'medium';
+  risk_level: 'critical' | 'high' | 'medium' | 'low';
   predicted_label: string;
   narrative: string;
+  suggestion?: string;
   evidence: EvidenceItem[];
 }
 
@@ -60,6 +73,7 @@ export interface AlertsResponse {
   counts: Record<string, number>;
   alerts: AlertItem[];
   total: number;
+  summary?: string;
 }
 
 export interface ServiceStatus {
@@ -87,4 +101,6 @@ export interface HealthResponse {
   version: string;
   model_loaded: boolean;
   data_loaded: boolean;
+  monitor_running?: boolean;
+  ollama_connected?: boolean;
 }

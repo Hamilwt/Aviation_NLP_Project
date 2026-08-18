@@ -7,10 +7,14 @@ import { formatPercent } from '@/utils/helpers';
 export function PerformancePage() {
   const { data, loading, error, refetch } = useModelPerformance();
 
-  if (loading) {
+  if (loading || (!data && !error)) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
         <Loader2 className="w-8 h-8 text-brown-500 animate-spin" />
+        <div className="text-center">
+          <p className="text-brown-800 font-medium">Loading model performance...</p>
+          <p className="text-brown-500 text-sm mt-1">Evaluating metrics from the trained model</p>
+        </div>
       </div>
     );
   }

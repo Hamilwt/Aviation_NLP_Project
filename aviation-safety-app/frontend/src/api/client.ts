@@ -18,7 +18,9 @@ class ApiClient {
       (response) => response,
       (error: AxiosError<{ detail?: string }>) => {
         const message = error.response?.data?.detail || error.message || 'An error occurred';
-        return Promise.reject(new Error(message));
+        const wrapped = new Error(message) as Error & { response?: { status?: number } };
+        wrapped.response = { status: error.response?.status };
+        return Promise.reject(wrapped);
       }
     );
   }
@@ -44,8 +46,13 @@ class ApiClient {
   }
 
   // Data Assistant
-  async analyze(query: string) {
-    return this.client.post('/analyze', { query });
+  async analyze(query: string, model?: string, useLlm = true) {
+    return this.client.post('/analyze', { query, model, use_llm: useLlm });
+  }
+
+  // Ollama
+  async getOllamaStatus(force = false) {
+    return this.client.get('/ollama/status', { params: { force } });
   }
 
   // Alerts

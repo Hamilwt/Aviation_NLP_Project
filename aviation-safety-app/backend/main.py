@@ -24,9 +24,11 @@ from schemas import (
     SystemControlResponse, ServiceStatus, PipelineRunRequest, PipelineRunResponse,
     HealthResponse, MonitorControlRequest, FetchDataRequest, FetchResult,
     TrainModelRequest, TrainResult, PipelineStage, PipelineStageProgress,
-    ServiceName, ServiceAction, RiskLevel, EvidenceItem,
+    ServiceName, ServiceAction, RiskLevel, EvidenceItem, OllamaStatusResponse,
 )
 from ml_service import ml_service, PipelineProgress
+from ollama_service import ollama_service
+from suggestions import build_alerts_summary
 
 # Configure logging
 logging.basicConfig(
@@ -186,7 +188,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Safety NLP Pipeline API",
     description="Aviation & Power-Grid Incident Analysis API with TF-IDF + SGD + RAG Explainability - Full Web Control",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan,
 )
 
@@ -211,11 +213,12 @@ if settings.PLOTS_DIR.exists():
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     return HealthResponse(
-        status="healthy" if ml_service.is_ready() else "loading",
-        version="2.0.0",
+        status="healthy" if ml_service.is_data_ready() else "loading",
+        version="2.1.0",
         model_loaded=ml_service._model is not None,
         data_loaded=ml_service._df is not None,
         monitor_running=proc_mgr.is_running("monitor"),
+        ollama_connected=ollama_service.get_status().connected,
     )
 
 # Load ML Artifacts endpoint
@@ -251,8 +254,8 @@ async def load_ml_artifacts():
 
 @app.get("/api/overview", response_model=DatasetStats)
 async def get_overview():
-    if not ml_service.is_ready():
-        raise HTTPException(status_code=503, detail="ML artifacts not loaded yet")
+    if not ml_service.is_data_ready():
+        raise HTTPException(status_code=503, detail="ML artifacts not loaded yet - retrying")
     stats = ml_service.get_dataset_stats()
     return DatasetStats(**stats)
 
@@ -263,8 +266,8 @@ async def get_overview():
 
 @app.get("/api/model-performance", response_model=ModelPerformanceResponse)
 async def get_model_performance():
-    if not ml_service.is_ready():
-        raise HTTPException(status_code=503, detail="ML artifacts not loaded yet")
+    if not ml_service.is_data_ready():
+        raise HTTPException(status_code=503, detail="ML artifacts not loaded yet - retrying")
     perf = ml_service.get_model_performance()
     if not perf:
         raise HTTPException(status_code=404, detail="Performance data not available. Run pipeline first.")
@@ -300,11 +303,46 @@ async def classify_incident(request: ClassifyRequest):
 
 @app.post("/api/analyze", response_model=DataAssistantResponse)
 async def analyze_data(request: AnalyzeRequest):
-    if not ml_service.is_ready():
-        raise HTTPException(status_code=503, detail="ML artifacts not loaded yet")
+    """Data Assistant: Ollama LLM (domain-constrained) with rule-based fallback."""
+    if not ml_service.is_data_ready():
+        raise HTTPException(status_code=503, detail="ML artifacts not loaded yet - retrying")
     
+    # 1) Try the local Ollama LLM when enabled and connected
+    if request.use_llm:
+        ollama_status = ollama_service.get_status()
+        if ollama_status.connected:
+            summary = ml_service.get_dataset_stats()
+            alerts_data = ml_service.get_alerts(limit=20)
+            context = ollama_service.build_context(
+                dataset_summary=summary,
+                domain_text=build_alerts_summary(alerts_data.get("alerts", []), alerts_data.get("total", 0)),
+            )
+            handled, reply = ollama_service.chat(request.query, model=request.model, context=context)
+            if handled and reply:
+                return DataAssistantResponse(
+                    lines=reply.split("\n"),
+                    reply=reply,
+                    used_llm=True,
+                    model=request.model or ollama_status.model,
+                    ollama_connected=True,
+                )
+    
+    # 2) Fallback: keyless rule-based analyst (always available)
     lines = ml_service.analyze_data(request.query)
-    return DataAssistantResponse(lines=lines)
+    return DataAssistantResponse(
+        lines=lines,
+        reply="\n".join(lines),
+        used_llm=False,
+        model=None,
+        ollama_connected=ollama_service.get_status().connected,
+    )
+
+
+@app.get("/api/ollama/status", response_model=OllamaStatusResponse)
+async def ollama_status(force: bool = Query(False, description="Force a refresh of the connection check")):
+    """Check the local Ollama server and list live models."""
+    status = ollama_service.get_status(force=force)
+    return OllamaStatusResponse(**status.to_dict())
 
 
 # ============================================================

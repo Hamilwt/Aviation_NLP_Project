@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSystemStatus, useServiceControl, usePipeline, useLoadMLArtifacts } from '@/hooks/useApi';
 import { Section, Card, CardHeader, Button, Badge, ProgressBar } from '@/components/ui';
 import { Loader2, Play, Square, Zap, AlertTriangle, CheckCircle, XCircle, RefreshCw, RotateCcw, Download, Database, Bell, Brain } from 'lucide-react';
-import { cn } from '@/utils/helpers';
+import { cn, basename } from '@/utils/helpers';
 
 export function SystemPage() {
   const { data, loading, error, refetch } = useSystemStatus();
@@ -370,7 +370,7 @@ export function SystemPage() {
                         <div className="mt-3 flex flex-wrap gap-2">
                           {Object.entries(pipelineResult.artifacts).map(([key, path]) => (
                             <span key={key} className="text-xs bg-cream-100 text-brown-600 px-2 py-1 rounded font-mono">
-                              {key}: {path.split('/').pop()}
+                              {key}: {basename(path)}
                             </span>
                           ))}
                         </div>

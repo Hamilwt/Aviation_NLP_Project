@@ -1,6 +1,28 @@
 import { useEffect, useCallback, useState } from 'react';
 import { api } from '@/api/client';
 import { useDataStore, useUIStore } from '@/store';
+import { OllamaStatus } from '@/types';
+
+const RETRYABLE_STATUS = 503;
+
+async function fetchWithRetry(
+  request: () => Promise<any>,
+  maxAttempts = 12,
+  delayMs = 2500
+) {
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      return await request();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      attempt += 1;
+      if (status !== RETRYABLE_STATUS || attempt >= maxAttempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
 
 export function useOverview() {
   const { overview, loading, error, setOverview, setLoading, setError } = useDataStore();
@@ -9,7 +31,7 @@ export function useOverview() {
   const fetchOverview = useCallback(async () => {
     setLoading('overview', true);
     try {
-      const response = await api.getOverview();
+      const response = await fetchWithRetry(() => api.getOverview());
       setOverview(response.data);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load overview';
@@ -32,7 +54,7 @@ export function useModelPerformance() {
   const fetchModelPerformance = useCallback(async () => {
     setLoading('modelPerformance', true);
     try {
-      const response = await api.getModelPerformance();
+      const response = await fetchWithRetry(() => api.getModelPerformance());
       setModelPerformance(response.data);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load model performance';
@@ -127,11 +149,11 @@ export function useAnalyze() {
   const [error, setError] = useState<string | null>(null);
   const { addNotification } = useUIStore();
 
-  const analyze = useCallback(async (query: string) => {
+  const analyze = useCallback(async (query: string, model?: string, useLlm = true) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.analyze(query);
+      const response = await api.analyze(query, model, useLlm);
       return response.data;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Analysis failed';
@@ -144,6 +166,30 @@ export function useAnalyze() {
   }, [addNotification]);
 
   return { analyze, loading, error };
+}
+
+export function useOllamaStatus() {
+  const [status, setStatus] = useState<OllamaStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async (force = false) => {
+    try {
+      const response = await api.getOllamaStatus(force);
+      setStatus(response.data);
+    } catch {
+      // Keep previous status on transient errors
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    const interval = setInterval(() => refresh(), 15000);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
+  return { status, loading, refresh };
 }
 
 export function usePipeline() {

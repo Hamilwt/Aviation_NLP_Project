@@ -10,6 +10,7 @@ class RiskLevel(str, Enum):
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
+    LOW = "low"
 
 
 class ServiceName(str, Enum):
@@ -40,6 +41,8 @@ class ClassifyRequest(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500, description="Analysis query")
+    model: Optional[str] = Field(default=None, description="Ollama model to use (optional)")
+    use_llm: bool = Field(default=True, description="Prefer Ollama LLM when connected, fall back to rule-based analyst")
 
 
 class MonitorControlRequest(BaseModel):
@@ -129,6 +132,18 @@ class ModelPerformanceResponse(BaseModel):
 
 class DataAssistantResponse(BaseModel):
     lines: List[str]
+    reply: str = ""
+    used_llm: bool = False
+    model: Optional[str] = None
+    ollama_connected: bool = False
+
+
+class OllamaStatusResponse(BaseModel):
+    connected: bool
+    base_url: str
+    model: str
+    models: List[str]
+    default_model: str
 
 
 class AlertItem(BaseModel):
@@ -138,6 +153,7 @@ class AlertItem(BaseModel):
     risk_level: RiskLevel
     predicted_label: str
     narrative: str
+    suggestion: str = ""
     evidence: List[EvidenceItem]
 
 
@@ -189,6 +205,7 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     data_loaded: bool
     monitor_running: bool
+    ollama_connected: bool = False
 
 
 class LoadArtifactsResponse(BaseModel):

@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { StatusBar } from './StatusBar';
 import { cn } from '@/utils/helpers';
 import { useUIStore } from '@/store';
 import { Toaster } from 'react-hot-toast';
@@ -13,16 +14,19 @@ export function Layout({ children }: LayoutProps) {
   const { sidebarOpen } = useUIStore();
 
   return (
-    <div className={cn('min-h-screen bg-cream-100', 'flex')}>
+    <div className={cn('h-screen overflow-hidden bg-cream-100', 'flex')}>
       <Sidebar />
       <div className={cn(
-        'flex-1 flex flex-col min-w-0',
+        'flex-1 flex flex-col min-w-0 h-screen',
         sidebarOpen ? 'lg:ml-64' : 'lg:ml-0',
       )}>
         <Header />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
-          {children ?? <Outlet />}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
+          <div className="max-w-[1600px] mx-auto">
+            {children ?? <Outlet />}
+          </div>
         </main>
+        <StatusBar />
       </div>
       <Toaster
         position="top-right"

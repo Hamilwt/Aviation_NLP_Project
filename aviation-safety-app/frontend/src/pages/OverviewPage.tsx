@@ -7,10 +7,14 @@ import { formatNumber } from '@/utils/helpers';
 export function OverviewPage() {
   const { data, loading, error, refetch } = useOverview();
 
-  if (loading) {
+  if (loading || (!data && !error)) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
         <Loader2 className="w-8 h-8 text-brown-500 animate-spin" />
+        <div className="text-center">
+          <p className="text-brown-800 font-medium">Loading dataset &amp; model artifacts...</p>
+          <p className="text-brown-500 text-sm mt-1">This can take a few seconds on first load</p>
+        </div>
       </div>
     );
   }
@@ -20,7 +24,7 @@ export function OverviewPage() {
       <Card className="text-center py-12">
         <AlertTriangle className="w-12 h-12 mx-auto text-red-500 mb-4" />
         <h3 className="text-brown-800 text-lg font-medium mb-2">Unable to load overview</h3>
-        <p className="text-brown-500 mb-4">{error || 'No data available'}</p>
+        <p className="text-brown-500 mb-4">{error || 'No data available. Run the pipeline first.'}</p>
         <button onClick={refetch} className="px-4 py-2 bg-brown-700 text-white rounded-lg hover:bg-brown-800">
           Try Again
         </button>

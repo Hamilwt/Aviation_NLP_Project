@@ -50,6 +50,11 @@ export function truncate(text: string, length: number): string {
   return text.slice(0, length) + '...';
 }
 
+export function basename(path: string): string {
+  if (!path) return path;
+  return path.split(/[\\/]/).pop() || path;
+}
+
 export function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);

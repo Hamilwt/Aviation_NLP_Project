@@ -2,13 +2,51 @@ import { useState, useMemo } from 'react';
 import { useAlerts } from '@/hooks/useApi';
 import { Section, Card, CardHeader, Badge, MetricCard, ProgressBar, StatGrid, Button } from '@/components/ui';
 import { PieChartComponent, BarChartComponent } from '@/components/charts/ChartComponents';
-import { Loader2, AlertTriangle, Shield, RefreshCw, ChevronDown, ChevronUp, FileText, Bell } from 'lucide-react';
-import { formatDate } from '@/utils/helpers';
+import { Loader2, AlertTriangle, Shield, RefreshCw, ChevronDown, ChevronUp, FileText, Bell, Lightbulb, Filter } from 'lucide-react';
+import { formatDate, cn } from '@/utils/helpers';
+
+type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
+type CategoryFilter = 'all' | RiskLevel;
+
+const RISK_ORDER: RiskLevel[] = ['critical', 'high', 'medium', 'low'];
+
+const RISK_COLORS: Record<RiskLevel, string> = {
+  critical: '#EF4444',
+  high: '#F97316',
+  medium: '#EAB308',
+  low: '#22C55E',
+};
+
+const RISK_LABELS: Record<RiskLevel, string> = {
+  critical: 'Critical',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+};
+
+const CATEGORY_META: Record<CategoryFilter, { label: string; color: string; ring: string }> = {
+  all: { label: 'All', color: '#5C4033', ring: 'ring-brown-700 text-brown-800 bg-brown-50' },
+  critical: { label: 'Critical', color: RISK_COLORS.critical, ring: 'ring-red-600 text-red-700 bg-red-50' },
+  high: { label: 'High', color: RISK_COLORS.high, ring: 'ring-orange-500 text-orange-700 bg-orange-50' },
+  medium: { label: 'Medium', color: RISK_COLORS.medium, ring: 'ring-yellow-500 text-yellow-700 bg-yellow-50' },
+  low: { label: 'Low', color: RISK_COLORS.low, ring: 'ring-green-600 text-green-700 bg-green-50' },
+};
+
+interface Alert {
+  incident_id: string;
+  risk_level: string;
+  predicted_label: string;
+  source: string;
+  narrative: string;
+  timestamp: string;
+  suggestion?: string;
+  evidence: Array<{ rank: number; similarity: number; label: string; domain: string; snippet: string }>;
+}
 
 export function AlertsPage() {
   const { data, loading, error, refetch } = useAlerts(200);
   const [expandedAlerts, setExpandedAlerts] = useState<Set<string>>(new Set());
-  const [riskFilter, setRiskFilter] = useState<'all' | 'critical' | 'high' | 'medium'>('all');
+  const [category, setCategory] = useState<CategoryFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<string>('all');
 
   const toggleExpand = (incidentId: string) => {
@@ -24,19 +62,30 @@ export function AlertsPage() {
   };
 
   const filteredAlerts = useMemo(() => {
-    return data?.alerts.filter((alert: { risk_level: string; source: string }) => {
-      if (riskFilter !== 'all' && alert.risk_level !== riskFilter) return false;
+    return data?.alerts.filter((alert: Alert) => {
+      if (category !== 'all' && alert.risk_level !== category) return false;
       if (sourceFilter !== 'all' && alert.source !== sourceFilter) return false;
       return true;
     }) || [];
-  }, [data?.alerts, riskFilter, sourceFilter]);
+  }, [data?.alerts, category, sourceFilter]);
 
-  const sources = useMemo((): string[] => [...new Set((data?.alerts as Array<{ source: string }> | undefined)?.map(a => a.source) || [])], [data?.alerts]);
+  const sources = useMemo((): string[] => [...new Set((data?.alerts as Alert[] | undefined)?.map(a => a.source) || [])], [data?.alerts]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<CategoryFilter, number> = { all: data?.alerts?.length || 0, critical: 0, high: 0, medium: 0, low: 0 };
+    (data?.alerts || []).forEach((a: Alert) => {
+      const key = a.risk_level as RiskLevel;
+      if (key in counts) counts[key] += 1;
+      else counts.all += 1;
+    });
+    return counts;
+  }, [data?.alerts]);
 
   if (loading && !data) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
         <Loader2 className="w-8 h-8 text-brown-500 animate-spin" />
+        <p className="text-brown-800 font-medium">Loading live alerts...</p>
       </div>
     );
   }
@@ -58,16 +107,11 @@ export function AlertsPage() {
   const alerts = filteredAlerts;
   const total = data?.total || 0;
 
-  const riskColors = { critical: '#EF4444', high: '#F97316', medium: '#22C55E' };
-  const riskLabels = { critical: 'Critical', high: 'High', medium: 'Medium' };
+  const riskDistData = RISK_ORDER
+    .map(risk => ({ name: RISK_LABELS[risk], value: counts[risk] || 0, color: RISK_COLORS[risk] }))
+    .filter(d => d.value > 0);
 
-  const riskDistData = Object.entries(counts).map(([risk, count]) => ({
-    name: riskLabels[risk as keyof typeof riskLabels] || risk,
-    value: count as number,
-    color: riskColors[risk as keyof typeof riskColors] || '#888',
-  })).filter(d => d.value > 0);
-
-  const sourceDistData = alerts.reduce((acc: Record<string, number>, alert: { source: string }) => {
+  const sourceDistData = alerts.reduce((acc: Record<string, number>, alert: Alert) => {
     acc[alert.source] = (acc[alert.source] || 0) + 1;
     return acc;
   }, {});
@@ -78,7 +122,7 @@ export function AlertsPage() {
     <div className="space-y-6">
       <Section
         title="Live Alerts"
-        subtitle="Real-time incident monitoring and alerting"
+        subtitle="Real-time incident monitoring with auto-generated safety suggestions"
         action={
           <Button variant="outline" onClick={refetch} loading={loading}>
             <RefreshCw className="w-4 h-4" />
@@ -86,25 +130,16 @@ export function AlertsPage() {
           </Button>
         }
       >
-        <StatGrid columns={4}>
-          <MetricCard
-            label="Critical"
-            value={counts.critical || 0}
-            icon={<AlertTriangle className="w-6 h-6" />}
-            color="#EF4444"
-          />
-          <MetricCard
-            label="High"
-            value={counts.high || 0}
-            icon={<Shield className="w-6 h-6" />}
-            color="#F97316"
-          />
-          <MetricCard
-            label="Medium"
-            value={counts.medium || 0}
-            icon={<FileText className="w-6 h-6" />}
-            color="#22C55E"
-          />
+        <StatGrid columns={5}>
+          {RISK_ORDER.map(risk => (
+            <MetricCard
+              key={risk}
+              label={RISK_LABELS[risk]}
+              value={counts[risk] || 0}
+              icon={risk === 'critical' ? <AlertTriangle className="w-6 h-6" /> : risk === 'high' ? <Shield className="w-6 h-6" /> : risk === 'medium' ? <FileText className="w-6 h-6" /> : <Bell className="w-6 h-6" />}
+              color={RISK_COLORS[risk]}
+            />
+          ))}
           <MetricCard
             label="Total Alerts"
             value={total}
@@ -154,40 +189,49 @@ export function AlertsPage() {
             title="Recent Alerts" 
             subtitle={data ? `Showing ${alerts.length} of ${total} total` : 'No alerts'}
             action={
-              <div className="flex items-center gap-2">
-                <select
-                  value={riskFilter}
-                  onChange={(e) => setRiskFilter(e.target.value as any)}
-                  className="px-3 py-1.5 border-cream-300 rounded-lg text-sm focus:ring-2 focus:ring-brown-500 focus:border-transparent"
-                >
-                  <option value="all">All Risk Levels</option>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                </select>
-                <select
-                  value={sourceFilter}
-                  onChange={(e) => setSourceFilter(e.target.value)}
-                  className="px-3 py-1.5 border-cream-300 rounded-lg text-sm focus:ring-2 focus:ring-brown-500 focus:border-transparent"
-                >
-                  <option value="all">All Sources</option>
-                  {sources.map((s: string) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="px-3 py-1.5 border border-cream-300 rounded-lg text-sm focus:ring-2 focus:ring-brown-500 focus:border-transparent bg-white"
+              >
+                <option value="all">All Sources</option>
+                {sources.map((s: string) => <option key={s} value={s}>{s}</option>)}
+              </select>
             }
           />
+
+          <div className="flex flex-wrap items-center gap-2 px-4 pb-4 border-b border-cream-300">
+            <Filter className="w-4 h-4 text-brown-400" />
+            {(Object.keys(CATEGORY_META) as CategoryFilter[]).map(cat => (
+              <button
+                key={cat}
+                onClick={() => setCategory(cat)}
+                className={cn(
+                  'px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
+                  'ring-1 ring-inset focus:outline-none focus:ring-2',
+                  category === cat
+                    ? CATEGORY_META[cat].ring
+                    : 'text-brown-500 hover:bg-cream-100 ring-transparent'
+                )}
+              >
+                {CATEGORY_META[cat].label}
+                <span className="ml-1.5 opacity-70">({categoryCounts[cat]})</span>
+              </button>
+            ))}
+          </div>
           
           {alerts.length === 0 ? (
             <div className="text-center py-16 text-brown-500">
               <Shield className="w-16 h-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg">No alerts found</p>
+              <p className="text-lg">No {category === 'all' ? '' : `${RISK_LABELS[category as RiskLevel]} `}alerts found</p>
               <p className="text-sm mt-1">Start the monitor to begin receiving alerts</p>
             </div>
           ) : (
             <div className="space-y-0">
-              {alerts.map((alert: { incident_id: string; risk_level: string; predicted_label: string; source: string; narrative: string; timestamp: string; evidence: Array<{ rank: number; similarity: number; label: string; domain: string; snippet: string }> }) => {
+              {alerts.map((alert: Alert) => {
                 const isExpanded = expandedAlerts.has(alert.incident_id);
-                const riskColor = riskColors[alert.risk_level as keyof typeof riskColors] || '#888';
+                const risk = (alert.risk_level as RiskLevel) in RISK_COLORS ? alert.risk_level as RiskLevel : 'medium';
+                const riskColor = RISK_COLORS[risk];
                 
                 return (
                   <div key={alert.incident_id} className="border-b border-cream-200 last:border-0">
@@ -199,8 +243,8 @@ export function AlertsPage() {
                       
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <Badge variant={alert.risk_level as any} size="sm">
-                            {riskLabels[alert.risk_level as keyof typeof riskLabels]}
+                          <Badge variant={risk === 'critical' ? 'error' : risk === 'high' ? 'warning' : risk === 'medium' ? 'default' : 'success'} size="sm">
+                            {RISK_LABELS[risk]}
                           </Badge>
                           <span className="font-medium text-brown-800">{alert.predicted_label}</span>
                           <Badge variant="info" size="sm">{alert.source}</Badge>
@@ -208,6 +252,12 @@ export function AlertsPage() {
                         </div>
                         <p className="mt-1 text-sm text-brown-600 truncate">{alert.narrative}</p>
                         <p className="mt-1 text-xs text-brown-400">{formatDate(alert.timestamp)}</p>
+                        {alert.suggestion && (
+                          <div className="mt-2 flex items-start gap-2 p-2.5 bg-teal-50 border border-teal-200 rounded-lg">
+                            <Lightbulb className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-teal-800 leading-relaxed">{alert.suggestion}</p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 text-brown-400">
@@ -229,8 +279,8 @@ export function AlertsPage() {
                             <div className="mt-1 space-y-2">
                               <div className="flex items-center gap-2">
                                 <span className="text-sm text-brown-600">Risk Level:</span>
-                                <Badge variant={alert.risk_level as any}>
-                                  {riskLabels[alert.risk_level as keyof typeof riskLabels]}
+                                <Badge variant={risk === 'critical' ? 'error' : risk === 'high' ? 'warning' : risk === 'medium' ? 'default' : 'success'}>
+                                  {RISK_LABELS[risk]}
                                 </Badge>
                               </div>
                               <div className="flex items-center gap-2">
@@ -248,6 +298,18 @@ export function AlertsPage() {
                             </div>
                           </div>
                         </div>
+
+                        {alert.suggestion && (
+                          <div className="mb-4">
+                            <p className="text-sm font-medium text-teal-700 mb-2 flex items-center gap-1.5">
+                              <Lightbulb className="w-4 h-4" />
+                              Safety Suggestion (auto-generated)
+                            </p>
+                            <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                              <p className="text-sm text-teal-900 leading-relaxed">{alert.suggestion}</p>
+                            </div>
+                          </div>
+                        )}
 
                         {alert.evidence.length > 0 && (
                           <div>

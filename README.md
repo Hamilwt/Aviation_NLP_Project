@@ -1,6 +1,6 @@
 # Safety NLP Pipeline — Aviation & Power-Grid Incident Analysis
 
-A production-grade NLP pipeline for classifying safety incident reports from **aviation (NASA ASRS)** and **power-grid (NERC)** domains, with **RAG explainability**, **real-time monitoring**, and a **modern React + FastAPI web dashboard**.
+A production-grade NLP pipeline for classifying safety incident reports from **aviation (NASA ASRS)** and **power-grid (NERC)** domains, with **RAG explainability**, **real-time monitoring**, **local Ollama LLM integration**, and a **modern React + FastAPI web dashboard**.
 
 ---
 
@@ -35,6 +35,13 @@ npm run dev
 - **API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
 
+### 3. (Optional) Enable Local LLM for Data Assistant
+```bash
+ollama serve
+ollama pull llama3   # or any model of your choice
+```
+The Data Assistant will automatically detect and use the local Ollama instance — no API key required.
+
 ---
 
 ## ✨ Dashboard Features
@@ -42,10 +49,10 @@ npm run dev
 | Page | Visualizations | Controls |
 |------|---------------|----------|
 | **Overview** | Domain pie chart, class bar charts, metric cards | Refresh data |
-| **Model Performance** | Per-class precision/recall/F1 bars, support charts, confusion matrix | View training config |
+| **Model Performance** | Per-class P/R/F1 bars, support charts, confusion matrix | View training config |
 | **RAG Explorer** | Similarity progress bars, evidence cards, sample narratives | Top-K selector, classify button |
-| **Data Assistant** | Query history, formatted responses, quick analysis buttons | Natural language queries |
-| **Live Alerts** | Risk level pie chart, source bar chart, filterable alert table | Risk/source filters, expandable evidence |
+| **Data Assistant** | **Ollama LLM chat** (domain-constrained), model selector, history, fallback analyst | Natural language queries, quick analysis buttons |
+| **Live Alerts** | **Critical/High/Medium/Low** tabs with counts, risk/source filters, **auto-generated safety suggestions**, evidence | Category tabs, source filter, expandable details |
 | **System Control** | Pipeline stage progress bars, service status badges, live logs | Start/stop services, run pipeline with options |
 
 ---
@@ -58,18 +65,23 @@ Aviation_NLP_Project/
 │   ├── backend/                   # FastAPI REST API
 │   │   ├── main.py               # All API endpoints
 │   │   ├── ml_service.py         # ML wrapper with progress tracking
-│   │   ├── config.py             # Settings
-│   │   └── schemas.py            # Pydantic models
+│   │   ├── config.py             # Settings (incl. Ollama)
+│   │   ├── schemas.py            # Pydantic models
+│   │   ├── ollama_service.py     # Ollama client with domain chat
+│   │   ├── suggestions.py        # Safety suggestion generator
+│   │   └── requirements.txt
 │   ├── frontend/                 # React + TypeScript + Vite
 │   │   ├── src/
 │   │   │   ├── components/
 │   │   │   │   ├── charts/       # Recharts: Bar, Pie, Line, Progress
-│   │   │   │   ├── layout/       # Sidebar, Header, Layout
-│   │   │   │   └── ui/           # Card, Table, Badge, MetricCard
+│   │   │   │   ├── layout/       # Sidebar, Header, Layout, StatusBar
+│   │   │   │   └── ui/           # Card, Table, Badge, MetricCard, Input, Button
 │   │   │   ├── pages/            # 6 dashboard pages
-│   │   │   ├── hooks/            # useApi hooks
+│   │   │   ├── hooks/            # useApi, useOllamaStatus hooks
 │   │   │   ├── store/            # Zustand state
-│   │   │   └── api/              # Axios client
+│   │   │   ├── api/              # Axios client
+│   │   │   ├── types/            # TypeScript types
+│   │   │   └── utils/            # Helpers
 │   │   └── package.json
 │   └── README.md
 │
@@ -87,7 +99,9 @@ Aviation_NLP_Project/
 │   ├── config.py                 # All parameters
 │   └── requirements.txt
 │
-└── PROJECT_OVERVIEW.txt          # Complete documentation (475 lines)
+├── PROJECT_OVERVIEW.txt          # Complete documentation
+├── README.md                     # This file
+└── .gitignore
 ```
 
 ---
@@ -122,6 +136,7 @@ Aviation_NLP_Project/
 - **Model**: ~71% accuracy / ~70% weighted F1 over 28 classes
 - **RAG**: Every prediction auditable with top-3 historical evidence
 - **Cross-domain**: Shared TF-IDF vocabulary surfaces genuine similarities
+- **Live Alerts**: Auto-generated safety suggestions per incident (NLP-based)
 
 ---
 
@@ -132,7 +147,7 @@ Aviation_NLP_Project/
 cd aviation-safety-app/frontend
 npm run dev          # Hot reload
 npm run build        # Production build
-npm run lint         # ESLint + TypeScript check
+npm run lint         # TypeScript check (eslint config needs update for ESLint 9)
 ```
 
 ### Backend Development
@@ -168,11 +183,14 @@ joblib==1.4.2
 pandas==2.2.3
 scikit-learn==1.6.1
 nltk==3.9.1
+httpx==0.28.1
+websockets==13.1
 ```
 
 ### Frontend
 ```
 react: ^18.3.1
+react-dom: ^18.3.1
 react-router-dom: ^6.26.2
 axios: ^1.7.7
 recharts: ^2.12.7
@@ -180,6 +198,7 @@ lucide-react: ^0.441.0
 zustand: ^5.0.0
 tailwindcss: ^3.4.13
 vite: ^5.4.8
+typescript: ^5.6.2
 ```
 
 ---
@@ -188,8 +207,8 @@ vite: ^5.4.8
 
 | File | Description |
 |------|-------------|
-| `PROJECT_OVERVIEW.txt` | Complete 475-line project documentation |
-| `aviation-safety-app/README.md` | Dashboard documentation |
+| `PROJECT_OVERVIEW.txt` | Complete project documentation |
+| `aviation-safety-app/README.md` | Dashboard-specific documentation |
 | `safety_nlp_pipeline/README.md` | Core pipeline documentation |
 
 ---

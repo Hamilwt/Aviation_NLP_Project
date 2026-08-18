@@ -45,12 +45,12 @@ interface CardHeaderProps {
 
 export function CardHeader({ title, subtitle, action, className }: CardHeaderProps) {
   return (
-    <div className={cn('flex items-start justify-between mb-4', className)}>
-      <div>
+    <div className={cn('flex items-start justify-between gap-4 flex-wrap mb-4', className)}>
+      <div className="min-w-0">
         <h3 className="text-brown-700 font-semibold text-lg">{title}</h3>
         {subtitle && <p className="text-brown-500 text-sm mt-0.5">{subtitle}</p>}
       </div>
-      {action && <div>{action}</div>}
+      {action && <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">{action}</div>}
     </div>
   );
 }

@@ -78,16 +78,17 @@ export function Table<T>({ columns, data, keyExtractor, striped = true, hoverabl
 
 interface StatGridProps {
   children: ReactNode;
-  columns?: 1 | 2 | 3 | 4;
+  columns?: 1 | 2 | 3 | 4 | 5;
   className?: string;
 }
 
 export function StatGrid({ children, columns = 4, className }: StatGridProps) {
-  const gridCols = {
+  const gridCols: Record<number, string> = {
     1: 'grid-cols-1',
     2: 'grid-cols-1 sm:grid-cols-2',
     3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
     4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+    5: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
   };
   
   return (
@@ -108,12 +109,12 @@ interface SectionProps {
 export function Section({ title, subtitle, children, action, className }: SectionProps) {
   return (
     <div className={cn('space-y-4', className)}>
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold text-brown-800">{title}</h2>
           {subtitle && <p className="text-brown-500 mt-0.5">{subtitle}</p>}
         </div>
-        {action && <div>{action}</div>}
+        {action && <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">{action}</div>}
       </div>
       <div>{children}</div>
     </div>

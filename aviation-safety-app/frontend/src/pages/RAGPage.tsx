@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useClassify } from '@/hooks/useApi';
 import { Section, Card, CardHeader, Button, Textarea, Badge, ProgressBar } from '@/components/ui';
-import { Search, Copy, Check, X, Sparkles } from 'lucide-react';
+import { Search, Copy, Check, X, Sparkles, AlertCircle } from 'lucide-react';
 
 const SAMPLE_NARRATIVES = [
   "I was cleared for the ILS approach but misheard the altitude restriction due to heavy static on the radio frequency. We descended below the minimum safe altitude and received a terrain warning.",
@@ -217,5 +217,3 @@ export function RAGPage() {
     </div>
   );
 }
-
-import { AlertCircle } from 'lucide-react';
