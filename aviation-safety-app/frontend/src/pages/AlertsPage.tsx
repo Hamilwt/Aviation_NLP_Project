@@ -112,7 +112,8 @@ export function AlertsPage() {
     .filter(d => d.value > 0);
 
   const sourceDistData = alerts.reduce((acc: Record<string, number>, alert: Alert) => {
-    acc[alert.source] = (acc[alert.source] || 0) + 1;
+    const source = alert.source || 'unknown';
+    acc[source] = (acc[source] || 0) + 1;
     return acc;
   }, {});
 
@@ -252,10 +253,10 @@ export function AlertsPage() {
                         </div>
                         <p className="mt-1 text-sm text-brown-600 truncate">{alert.narrative}</p>
                         <p className="mt-1 text-xs text-brown-400">{formatDate(alert.timestamp)}</p>
-                        {alert.suggestion && (
+                        {(alert.suggestion || `Priority ${RISK_LABELS[risk as RiskLevel]} response: review the incident evidence, confirm the safety controls that failed, and document the corrective action plan before normal operations continue.`) && (
                           <div className="mt-2 flex items-start gap-2 p-2.5 bg-teal-50 border border-teal-200 rounded-lg">
                             <Lightbulb className="w-4 h-4 text-teal-600 flex-shrink-0 mt-0.5" />
-                            <p className="text-xs text-teal-800 leading-relaxed">{alert.suggestion}</p>
+                            <p className="text-xs text-teal-800 leading-relaxed">{alert.suggestion || `Priority ${RISK_LABELS[risk as RiskLevel]} response: review the incident evidence, confirm the safety controls that failed, and document the corrective action plan before normal operations continue.`}</p>
                           </div>
                         )}
                       </div>

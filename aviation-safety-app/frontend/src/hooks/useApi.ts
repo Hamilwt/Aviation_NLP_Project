@@ -37,6 +37,8 @@ export function useOverview() {
       const message = err instanceof Error ? err.message : 'Failed to load overview';
       setError('overview', message);
       addNotification({ type: 'error', message });
+    } finally {
+      setLoading('overview', false);
     }
   }, [setOverview, setLoading, setError, addNotification]);
 
@@ -60,6 +62,8 @@ export function useModelPerformance() {
       const message = err instanceof Error ? err.message : 'Failed to load model performance';
       setError('modelPerformance', message);
       addNotification({ type: 'error', message });
+    } finally {
+      setLoading('modelPerformance', false);
     }
   }, [setModelPerformance, setLoading, setError, addNotification]);
 
@@ -83,6 +87,8 @@ export function useAlerts(limit = 50) {
       const message = err instanceof Error ? err.message : 'Failed to load alerts';
       setError('alerts', message);
       addNotification({ type: 'error', message });
+    } finally {
+      setLoading('alerts', false);
     }
   }, [limit, setAlerts, setLoading, setError, addNotification]);
 
@@ -108,6 +114,8 @@ export function useSystemStatus() {
       const message = err instanceof Error ? err.message : 'Failed to load system status';
       setError('systemStatus', message);
       addNotification({ type: 'error', message });
+    } finally {
+      setLoading('systemStatus', false);
     }
   }, [setSystemStatus, setLoading, setError, addNotification]);
 

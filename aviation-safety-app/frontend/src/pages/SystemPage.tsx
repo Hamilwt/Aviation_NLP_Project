@@ -69,6 +69,11 @@ export function SystemPage() {
 
   const services = data?.services || [];
   const logs = data?.logs || {};
+  const sanitizeLogEntry = (entry: string) => entry
+    .replace(/([A-Za-z]:)?\\[\\/A-Za-z0-9_. -]+/g, (match) => match.includes(':') ? '[system-path]' : match.split('/').pop() || '[system-path]')
+    .replace(/\/Users\/[^\n]+/gi, '[user-path]')
+    .replace(/\/home\/[^\n]+/gi, '[home-path]')
+    .replace(/\/workspace\/[^\n]+/gi, '[workspace-path]');
 
   const handleStartPipeline = async () => {
     setPollProgress(true);
@@ -151,8 +156,8 @@ export function SystemPage() {
                       <Badge variant={service.running ? 'success' : 'default'} size="md" className="px-3 py-1">
                         {service.running ? 'RUNNING' : 'STOPPED'}
                       </Badge>
-                      {service.pid && (
-                        <span className="text-xs text-brown-400 font-mono px-2 py-1 bg-cream-100 rounded">PID: {service.pid}</span>
+                      {service.pid && service.name === 'monitor' && (
+                        <span className="text-xs text-brown-400 font-mono px-2 py-1 bg-cream-100 rounded">pid {service.pid}</span>
                       )}
                     </div>
                   </div>
@@ -415,7 +420,7 @@ export function SystemPage() {
               </div>
             </div>
             <pre className="bg-brown-900 text-cream-100 p-4 rounded-lg overflow-x-auto text-sm font-mono max-h-96">
-              <code>{logs[activeLogTab]?.slice(-200).join('\n') || 'No logs yet. Start the service to see output.'}</code>
+              <code>{(logs[activeLogTab] || []).slice(-200).map(sanitizeLogEntry).join('\n') || 'No logs yet. Start the service to see output.'}</code>
             </pre>
           </div>
         </Card>

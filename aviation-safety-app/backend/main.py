@@ -37,6 +37,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def sanitize_system_text(value: str) -> str:
+    if not value:
+        return value
+    sanitized = value.replace("\\", "/")
+    sanitized = sanitized.replace("C:/", "")
+    sanitized = sanitized.replace("/Users/", "[user]/")
+    sanitized = sanitized.replace("/home/", "[home]/")
+    sanitized = sanitized.replace("/tmp/", "[tmp]/")
+    sanitized = sanitized.replace("/var/", "[var]/")
+    sanitized = sanitized.replace("/opt/", "[opt]/")
+    sanitized = sanitized.replace("/Program Files/", "[program-files]/")
+    sanitized = sanitized.replace("/workspace/", "[workspace]/")
+    sanitized = sanitized.replace("/vs code/", "[workspace]/")
+    return sanitized
+
 # Process management
 class ProcessManager:
     SERVICES = {
@@ -64,7 +79,8 @@ class ProcessManager:
             for line in iter(stream.readline, ''):
                 if line:
                     with self.lock:
-                        entry = f"[{datetime.now().strftime('%H:%M:%S')}] {line.rstrip()}"
+                        raw_line = line.rstrip()
+                        entry = f"[{datetime.now().strftime('%H:%M:%S')}] {sanitize_system_text(raw_line)}"
                         self.log_buffers[service_name].append(entry)
                         self.log_queues[service_name].put(entry)
                         # Keep buffer bounded

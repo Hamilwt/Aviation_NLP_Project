@@ -21,8 +21,8 @@ export function Layout({ children }: LayoutProps) {
         sidebarOpen ? 'lg:ml-64' : 'lg:ml-0',
       )}>
         <Header />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
-          <div className="max-w-[1600px] mx-auto">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 scrollbar-thin">
+          <div className="max-w-[1600px] mx-auto pb-2">
             {children ?? <Outlet />}
           </div>
         </main>
