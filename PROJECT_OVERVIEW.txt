@@ -291,76 +291,105 @@ Each src module is also runnable directly (e.g. python src/data_fetcher.py).
 -------------------------------------------------------------------------------
 9. DEPENDENCIES
 -------------------------------------------------------------------------------
-  Core Pipeline:
+The actual dependency lists live with each component:
+  - safety_nlp_pipeline/requirements.txt          core NLP pipeline
+  - aviation-safety-app/backend/requirements.txt  FastAPI backend
+  - aviation-safety-app/frontend/package.json    React + TypeScript dashboard
+
+Summary:
+  Core Pipeline (safety_nlp_pipeline/):
     pandas>=2.2, scikit-learn>=1.5, datasets>=3.0, joblib>=1.4,
     nltk>=3.8, pypdf>=4.0, requests>=2.31, matplotlib>=3.8,
-    seaborn>=0.13, jinja2>=3.1, streamlit>=1.37, textual>=8.2,
-    python-docx>=1.1
+    seaborn>=0.13, jinja2>=3.1, streamlit>=1.37
+    (textual is OPTIONAL - only the legacy Textual TUI at app.py uses it)
 
-  Backend API:
+  Backend API (aviation-safety-app/backend/):
     fastapi==0.115.0, uvicorn[standard]==0.34.0, pydantic==2.10.6,
-    pydantic-settings==2.9.0, joblib==1.4.2, pandas==2.2.3,
-    scikit-learn==1.6.1, scipy==1.14.1, requests==2.32.3,
-    pypdf==5.1.0, nltk==3.9.1, httpx==0.28.1, websockets==13.1
+    pydantic-settings==2.9.0, python-multipart==0.0.9, python-dotenv==1.0.1,
+    joblib==1.4.2, pandas==2.2.3, numpy==2.1.3, scikit-learn==1.6.1,
+    scipy==1.14.1, requests==2.32.3, pypdf==5.1.0, nltk==3.9.1,
+    httpx==0.28.1, websockets==13.1, watchfiles==1.0.5
 
-  Frontend:
+  Frontend (aviation-safety-app/frontend/):
     react@18.3.1, react-dom@18.3.1, react-router-dom@6.26.2,
     axios@1.7.7, recharts@2.12.7, lucide-react@0.441.0,
     clsx@2.1.1, tailwind-merge@2.5.2, date-fns@4.1.0,
     react-hot-toast@2.4.1, zustand@5.0.0, tailwindcss@3.4.13,
     typescript@5.6.2, vite@5.4.8
 
+  Helper scripts at the repo root:
+    python-docx>=1.1   (make_report.py - builds Aviation_NLP_Pipeline_Report.docx)
+    textual>=8.2       (app.py - legacy Textual terminal UI, optional)
+
 -------------------------------------------------------------------------------
 10. PROJECT STRUCTURE
 -------------------------------------------------------------------------------
 Aviation_NLP_Project/
-├── aviation-safety-app/           # Web Dashboard (React + FastAPI)
-│   ├── backend/
-│   │   ├── main.py               # FastAPI endpoints
-│   │   ├── ml_service.py         # ML wrapper + progress
-│   │   ├── config.py             # Settings
-│   │   ├── schemas.py            # Pydantic models
-│   │   └── requirements.txt
-│   ├── frontend/
-│   │   ├── src/
-│   │   │   ├── components/
-│   │   │   │   ├── charts/       # BarChart, PieChart, LineChart, ProgressBar
-│   │   │   │   ├── layout/       # Sidebar, Header, Layout
-│   │   │   │   └── ui/           # Card, Table, Badge, MetricCard, Input, Button
-│   │   │   ├── pages/            # Overview, Performance, RAG, Assistant, Alerts, System
-│   │   │   ├── hooks/            # useApi hooks
-│   │   │   ├── store/            # Zustand state
-│   │   │   ├── api/              # Axios client
-│   │   │   ├── types/            # TypeScript types
-│   │   │   └── utils/            # Helpers
-│   │   ├── package.json
-│   │   ├── vite.config.ts
-│   │   ├── tailwind.config.js
-│   │   └── tsconfig.json
-│   └── README.md
-│
-├── safety_nlp_pipeline/           # Core Python Pipeline
-│   ├── src/
-│   │   ├── data_fetcher.py
-│   │   ├── preprocessor.py
-│   │   ├── trainer.py
-│   │   ├── evaluator.py
-│   │   ├── rag_explainer.py
-│   │   ├── analyst.py
-│   │   ├── monitor.py
-│   │   └── report_generator.py
-│   ├── main.py
-│   ├── config.py
-│   ├── app_streamlit.py          # Legacy Streamlit (deprecated)
-│   └── requirements.txt
-│
-├── PROJECT_OVERVIEW.txt           # This file
-├── README.md                      # Main project README
-└── .gitignore
+|-- start.py, start_app.bat / .sh / .ps1   one-click launchers
+|-- make_report.py                          builds Aviation_NLP_Pipeline_Report.docx
+|-- app.py, pipeline/                       legacy Textual TUI (kept as a developer tool)
+|-- Aviation_NLP_Pipeline_Report.docx       generated DOCX report (run make_report.py)
+|-- Research Document AI Applications...docx supporting research material
+|-- _research_extract.txt, _tables_extract.txt  text/table extracts from the research doc
+|-- aviation-safety-app/                    Web Dashboard (React + FastAPI)
+|   |-- backend/
+|   |   |-- main.py               FastAPI endpoints
+|   |   |-- ml_service.py         ML wrapper + progress
+|   |   |-- config.py             Settings (incl. Ollama)
+|   |   |-- schemas.py            Pydantic models
+|   |   |-- ollama_service.py     Ollama client with domain-constrained chat
+|   |   |-- suggestions.py        Auto-generated safety suggestions for alerts
+|   |   |-- .env.example          Environment variable template
+|   |   `-- requirements.txt
+|   |-- frontend/
+|   |   |-- src/
+|   |   |   |-- components/
+|   |   |   |   |-- charts/       Recharts components (Bar, Pie, Line, Progress)
+|   |   |   |   |-- layout/       Sidebar, Header, Layout, StatusBar
+|   |   |   |   `-- ui/           Card, Table, Badge, MetricCard, Input, Button
+|   |   |   |-- pages/            Overview, Performance, RAG, Assistant, Alerts, System
+|   |   |   |-- hooks/            useApi, useOllamaStatus hooks
+|   |   |   |-- store/            Zustand state
+|   |   |   |-- api/              Axios client
+|   |   |   |-- types/            TypeScript types
+|   |   |   `-- utils/            Helpers
+|   |   |-- package.json
+|   |   |-- vite.config.ts
+|   |   |-- tailwind.config.js
+|   |   `-- tsconfig.json
+|   `-- README.md
+|
+|-- safety_nlp_pipeline/                    Core Python Pipeline
+|   |-- src/
+|   |   |-- data_fetcher.py
+|   |   |-- preprocessor.py
+|   |   |-- trainer.py
+|   |   |-- evaluator.py
+|   |   |-- rag_explainer.py
+|   |   |-- analyst.py
+|   |   |-- monitor.py
+|   |   `-- report_generator.py
+|   |-- main.py
+|   |-- config.py
+|   |-- MONITOR_GUIDE.md
+|   |-- app_streamlit.py                    Legacy Streamlit (deprecated, still functional)
+|   |-- new_incidents/                      Drop-in folder for new CSV/TXT reports
+|   `-- requirements.txt
+|
+|-- PROJECT_OVERVIEW.txt                    This file
+|-- README.md                               Main project README
+`-- .gitignore
 
--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 11. HOW TO RUN
--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+  # 0. ONE-CLICK LAUNCHER (recommended) - runs the pipeline if needed, then
+  #    starts backend + frontend and opens the dashboard in your browser.
+  python start.py                    # cross-platform Python launcher
+  ./start_app.sh                     # Linux / macOS
+  ./start_app.ps1                    # Windows PowerShell
+  start_app.bat                      # Windows cmd
+
   # 1. Core pipeline (generates all artifacts)
   cd safety_nlp_pipeline
   pip install -r requirements.txt
@@ -379,11 +408,18 @@ Aviation_NLP_Project/
   cd frontend && npm install && npm run dev
   # http://localhost:5173
 
-  # 3. Real-time Monitor (optional)
+  # 3. Legacy Streamlit dashboard (optional)
+  cd ../safety_nlp_pipeline
+  streamlit run app_streamlit.py          # http://localhost:8501
+
+  # 4. Legacy Textual terminal UI (optional)
+  python app.py                           # numbered menu
+
+  # 5. Real-time Monitor (optional)
   python -m src.monitor                   # continuous incident monitoring
 
 First run auto-downloads NLTK corpora and live datasets (2-5 minutes).
-Subsequent runs reuse cache. Monitor requires trained model — run main.py first.
+Subsequent runs reuse cache. Monitor requires trained model - run main.py first.
 
 -------------------------------------------------------------------------------
 12. RESULTS
@@ -417,16 +453,28 @@ Subsequent runs reuse cache. Monitor requires trained model — run main.py firs
     classifier output for a solver-based constraint verifier.
 
 -------------------------------------------------------------------------------
-14. GIT HISTORY
+14. GIT HISTORY (most recent first)
 -------------------------------------------------------------------------------
+  6e3d442 feat: Enhance AssistantPage with Ollama integration and chat functionality
+  c4ca950 feat: improve command execution and backend startup messages in launcher script
+  08a4ac0 feat: add one-click launcher scripts for Safety NLP Pipeline in Python, PowerShell, Bash, and Batch
+  2bb1761 feat: add column aliases for dataset normalization and update ML service to use them
+  11c73d7 feat: add endpoint and UI for loading ML artifacts with status indicators
+  3e4bf5d feat(ui): create index file to export UI components
+  437b774 feat: Enhance SystemPage with pipeline progress tracking and UI improvements
+  069362d feat: add Performance, RAG, and System pages with UI components and state management
+  52ec4ba refactor: streamline process management UI and enhance service descriptions
+  2166704 feat: enhance Streamlit dashboard with process management and additional tabs
+  f8d9a19 Add real-time incident monitoring and alerting feature
+  1941b0e Refactor project overview and reporting structure: transition from terminal UI to web dashboard
+  efb0e39 feat: add Streamlit web dashboard for Safety NLP Pipeline with interactive data insights
+  0caafdc Add Safety NLP Pipeline components and requirements
   91d65bc Refactor Aviation NLP Pipeline to Support Power-Grid Safety Data
   821104b Add research document, tables extract, and report generation script
   c7454b0 Enhance Aviation NLP Pipeline with Menu-Driven TUI and Data Assistant
-  8f88efc feat: implement complete aviation NLP pipeline with terminal UI...
+  8f88efc feat: implement complete aviation NLP pipeline with terminal UI and data processing steps
   95ff3a6 Refactor code structure for improved readability and maintainability
-  e0b01ca feat: implement RAG semantic retrieval and explainable classification
-  8bd3baf feat: implement domain preprocessing and train classification model
-  ea680af feat: implement public ASRS data ingestion bypassing HF gates
+  e0b01ca feat: implement RAG semantic retrieval and explainable classification output
   9322ff0 chore: initialize project workspace and gitignore
 
 -------------------------------------------------------------------------------

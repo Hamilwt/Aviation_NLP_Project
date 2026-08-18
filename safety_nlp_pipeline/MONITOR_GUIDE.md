@@ -2,9 +2,9 @@
 
 ## Overview
 
-The **monitor** (`src/monitor.py`) turns the batch pipeline into a **proactive decision-support service**. It continuously ingests new incident reports, classifies them on-the-fly with the trained model, scores their risk level (**critical / high / medium**), retrieves RAG evidence from similar past incidents, and raises alerts — all without human intervention.
+The **monitor** (`src/monitor.py`) turns the batch pipeline into a **proactive decision-support service**. It continuously ingests new incident reports, classifies them on-the-fly with the trained model, scores their risk level (**critical / high / medium / low**), retrieves RAG evidence from similar past incidents, and raises alerts — all without human intervention.
 
-Alerts are written to `data/alerts.csv` and displayed live in the Streamlit **���� Live Alerts** tab with color-coded rows and per-alert RAG evidence expanders.
+Alerts are written to `data/alerts.csv` and displayed live in the **React + FastAPI Live Alerts page** (recommended) with color-coded rows, auto-generated safety suggestions and per-alert RAG evidence. The legacy Streamlit dashboard's *Live Alerts* tab is also supported.
 
 ---
 
@@ -36,9 +36,7 @@ python main.py --monitor --poll 30
 
 ```bash
 # Option 1: Drop a CSV into the watched folder
-echo 'id,narrative
-DEMO-001,Engine fire at FL350, declared emergency, dumping fuel.
-DEMO-002,Unplanned power cut affecting 250 customers in PINNER.' \
+printf 'id,narrative\nDEMO-001,Engine fire at FL350, declared emergency, dumping fuel.\nDEMO-002,Unplanned power cut affecting 250 customers in PINNER.\n' \
   > new_incidents/DEMO-2026.csv
 
 # Option 2: Append rows to the master dataset (auto-detected on next scan)
@@ -46,58 +44,65 @@ DEMO-002,Unplanned power cut affecting 250 customers in PINNER.' \
 
 ### View Alerts
 
-```bash
-streamlit run app_streamlit.py
-# → click the "���� Live Alerts" tab
-```
+- **Modern React + FastAPI dashboard (recommended):**
+  ```bash
+  cd ../aviation-safety-app
+  python start.py          # or use start_app.bat / .sh / .ps1 from the repo root
+  # open http://localhost:5173  ->  "Live Alerts" page
+  ```
+- **Legacy Streamlit dashboard:**
+  ```bash
+  streamlit run app_streamlit.py
+  # open http://localhost:8501  ->  "Live Alerts" tab
+  ```
 
 ---
 
 ## Architecture
 
 ```
-��─────────────────────────────────────────────────────────────────��
-│                    INCIDENT MONITOR LOOP                         │
-├─────────────────────────────────────────────────────────────────��
-│  WATCH FOLDER     MASTER DATASET     NTSB API      UKPN API      │
-│  (CSV/TXT)        (appended rows)    (daily)       (every min)   │
-│       │                │               │               │          │
-│       └────────��───────��───────��───────��───────��───────��          │
-│                ��               ��               ��                  │
-│         ��─────────────────────────────────────────────��           │
-│         │           classify + risk score              │           │
-│         │  process_new_incident(narrative, id, source) │           │
-│         └────────────────────��────────────────────────��           │
-│                              ��                                    │
-│                    ��─────────────────────��                        │
-│                    │  assess_risk(text,  │                        │
-│                    │       predicted)    │                        │
-│                    │  → critical/high/   │                        │
-│                    │     medium          │                        │
-│                    └──────────��──────────��                        │
-│                               ��                                    │
-│                    ��─────────────────────��                        │
-│                    │  RAG evidence       │                        │
-│                    │  (explain_text)     │                        │
-│                    └──────────��──────────��                        │
-│                               ��                                    │
-│              critical/high? → log_alert() → data/alerts.csv       │
-│                               │                                    │
-│                               ��                                    │
-│                    Streamlit "Live Alerts" tab                    │
-��─────────────────────────────────────────────────────────────────��
++----------------------------------------------------------------+
+|                    INCIDENT MONITOR LOOP                       |
++----------------------------------------------------------------+
+|  WATCH FOLDER     MASTER DATASET     NTSB API      UKPN API    |
+|  (CSV/TXT)        (appended rows)    (daily)       (every min) |
+|       |                |               |               |        |
+|       +-------|-------|---------------|-------+-------+        |
+|               |       |               |       |                |
+|        +------------------------------------------+             |
+|        |       classify + risk score              |             |
+|        |  process_new_incident(narrative,id,src)  |             |
+|        +---------------------+--------------------+             |
+|                              |                                  |
+|                    +---------------------+                      |
+|                    |  assess_risk(text,  |                      |
+|                    |       predicted)    |                      |
+|                    |  -> critical/high/  |                      |
+|                    |     medium/low      |                      |
+|                    +----------+----------+                      |
+|                               |                                 |
+|                    +---------------------+                      |
+|                    |  RAG evidence       |                      |
+|                    |  (explain_text)     |                      |
+|                    +----------+----------+                      |
+|                               |                                 |
+|        critical/high? -> log_alert() -> data/alerts.csv        |
+|                               |                                 |
+|                               v                                 |
+|           React + FastAPI "Live Alerts" page                   |
++----------------------------------------------------------------+
 ```
 
 ---
 
 ## Data Sources
 
-| Source                     | Type                                              | Cadence                                     | Notes                                                                                                                                                                                                                                                                          |
-| -------------------------- | ------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Drop-in folder**   | CSV/TXT files in`new_incidents/`                | Every`MONITOR_POLL_SECONDS` (60s)         | Forgiving parser: handles unquoted commas.                                                                                                                                                                                                                                     |
-| **Master dataset**   | Rows appended to`data/real_safety_dataset.csv`  | Every loop                                  | First scan establishes baseline — history is NOT re-alerted.                                                                                                                                                                                                                  |
-| **NTSB API**         | US aviation accidents (probable-cause narratives) | Every`NTSB_POLL_SECONDS` (3600s / hourly) | `https://api.ai-analytics.org/api/v1/ntsb/aviation/recent` — CC0 public domain. Skips records without `probable_cause`.                                                                                                                                                   |
-| **UKPN Live Faults** | UK power cuts (unplanned only)                    | Every`UKPN_POLL_SECONDS` (60s)            | `ukpn-live-faults` dataset on `ukpowernetworks.opendatasoft.com`. **NOTE**: `live-power-cuts` returns 404 — the real dataset is `ukpn-live-faults`. Power cuts affecting ≥ `ALERT_HIGH_MIN_CUSTOMERS` (100) escalate to `high` regardless of keyword hits. |
+| Source                | Type                                              | Cadence                                     | Notes                                                                                                                                                                                                                                                                                |
+| --------------------- | ------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Drop-in folder**    | CSV/TXT files in `new_incidents/`                 | Every `MONITOR_POLL_SECONDS` (60s)          | Forgiving parser: handles unquoted commas.                                                                                                                                                                                                                                           |
+| **Master dataset**    | Rows appended to `data/real_safety_dataset.csv`   | Every loop                                  | First scan establishes baseline — history is NOT re-alerted.                                                                                                                                                                                                                        |
+| **NTSB API**          | US aviation accidents (probable-cause narratives) | Every `NTSB_POLL_SECONDS` (3600s / hourly)  | `https://api.ai-analytics.org/api/v1/ntsb/aviation/recent` — CC0 public domain. Skips records without `probable_cause`.                                                                                                                                                             |
+| **UKPN Live Faults**  | UK power cuts (unplanned only)                    | Every `UKPN_POLL_SECONDS` (60s)             | `ukpn-live-faults` dataset on `ukpowernetworks.opendatasoft.com`. **NOTE**: `live-power-cuts` returns 404 — the real dataset is `ukpn-live-faults`. Power cuts affecting >= `ALERT_HIGH_MIN_CUSTOMERS` (100) escalate to `high` regardless of keyword hits.                  |
 
 ---
 
@@ -127,35 +132,41 @@ Content is the full narrative; filename becomes the `incident_id`.
 
 ## Risk Assessment (`assess_risk`)
 
-Returns **critical / high / medium** based on:
+Returns **critical / high / medium / low** based on:
 
 1. **Raw-text triggers** (override model label):
 
    - **Critical**: `fire`, `smoke`, `explosion`, `crash`, `cfit`, `terrain`, `loss of communication`, `lost contact`, `radio failure`, `atc communication`, `power outage`, `power cut`, `blackout`, `grid collapse`, `system emergency`, `evacuation`, `emergency`, `mayday`, `engine failure`, `dual engine`.
    - **High**: `altitude`, `runway`, `weather`, `storm`, `hurricane`, `arctic`, `icing`, `turbulence`, `wind shear`, `engine`, `hydraulic`, `fuel`, `bird strike`, `decompression`, `loss of power`, `outage`.
+   - **Medium**: matches above; everything else falls here.
+   - **Low**: no keywords detected (used as a final bucket).
 2. **Model label intrinsic criticality** (from `analyst._risk_level`): label keywords mapped to critical/high/medium.
 3. **High-risk narrative vocabulary** (if no label match): same high list above.
 
-Result priority: triggers → label → vocab → medium.
+Result priority: triggers -> label -> vocab -> medium.
 
 ---
 
 ## Alert Lifecycle
 
 1. **Ingest**: new report arrives from any source.
-2. **Classify**: `explain_text` → predicted label + top-3 RAG evidence.
-3. **Score risk**: `assess_risk` → critical / high / medium.
+2. **Classify**: `explain_text` -> predicted label + top-3 RAG evidence.
+3. **Score risk**: `assess_risk` -> critical / high / medium.
 4. **Filter**: only **critical** and **high** become alerts; medium is logged as "No alert".
-5. **Persist**: `log_alert` appends one row to `data/alerts.csv`:| Column              | Description                                                         |
-   | ------------------- | ------------------------------------------------------------------- |
-   | `timestamp`       | ISO datetime                                                        |
-   | `incident_id`     | stable ID (from source)                                             |
-   | `source`          | `watch/FILE.csv`, `dataset`, `NTSB API`, `UKPN Live Faults` |
-   | `risk_level`      | `critical` / `high` / `medium`                                |
-   | `predicted_label` | model prediction                                                    |
-   | `narrative`       | snippet (first`MONITOR_ALERT_SNIPPET` chars)                      |
-   | `evidence_json`   | JSON array of RAG evidence dicts                                    |
-6. **Display**: Streamlit Live Alerts tab reads `alerts.csv`, parses `evidence_json`, shows color-coded table + expanders with evidence.
+5. **Persist**: `log_alert` appends one row to `data/alerts.csv`:
+
+   | Column            | Description                                                          |
+   | ----------------- | -------------------------------------------------------------------- |
+   | `timestamp`       | ISO datetime                                                         |
+   | `incident_id`     | stable ID (from source)                                              |
+   | `source`          | `watch/FILE.csv`, `dataset`, `NTSB API`, `UKPN Live Faults`          |
+   | `risk_level`      | `critical` / `high` / `medium`                                       |
+   | `predicted_label` | model prediction                                                     |
+   | `narrative`       | snippet (first `MONITOR_ALERT_SNIPPET` chars)                        |
+   | `evidence_json`   | JSON array of RAG evidence dicts                                     |
+6. **Display**:
+   - React dashboard: Live Alerts page (recommended) with category tabs, color-coded risk badges, auto-generated safety suggestions and expandable RAG evidence.
+   - Streamlit: Live Alerts tab reads `alerts.csv`, parses `evidence_json`, shows color-coded table + expanders with evidence.
 
 ---
 
@@ -172,7 +183,18 @@ A monitor **restart never re-alerts** on already-processed incidents.
 
 ---
 
-## Streamlit "Live Alerts" Tab
+## Live Alerts UI
+
+### React + FastAPI dashboard (recommended)
+
+- **Metrics row**: Critical / High / Medium counts + Total.
+- **Risk-level category tabs** (All / Critical / High / Medium / Low) with counts.
+- **Source filter** dropdown.
+- **Color-coded risk badges** (red = critical, orange = high, yellow = medium, green = low).
+- **Auto-generated safety suggestions** per alert (NLP keyword extraction in `aviation-safety-app/backend/suggestions.py`).
+- **Expandable alert details** with RAG evidence and similarity bars.
+
+### Legacy Streamlit "Live Alerts" tab
 
 - **Metrics row**: Critical / High / Medium counts + Total.
 - **Table** (most recent 50): color-coded rows (red = critical, yellow = high).
@@ -212,7 +234,7 @@ Runs the full pipeline, then starts the monitor loop with poll interval `N` seco
 python -c "
 from src import monitor
 assert monitor.assess_risk('Engine fire at FL350', 'x') == 'critical'
-assert monitor.assess_rink('Paperwork completed', 'x') == 'medium'
+assert monitor.assess_risk('Paperwork completed', 'x') == 'medium'
 print('assess_risk OK')
 "
 ```
@@ -222,14 +244,11 @@ print('assess_risk OK')
 ```bash
 # clean slate
 rm -f data/alerts.csv data/monitor_state.json
-echo 'id,narrative
-DEMO-001,Engine fire at FL350, declared emergency.
-DEMO-002,Unplanned power cut affecting 250 customers.
-DEMO-003,Routine preflight checks.' > new_incidents/DEMO.csv
+printf 'id,narrative\nDEMO-001,Engine fire at FL350, declared emergency.\nDEMO-002,Unplanned power cut affecting 250 customers.\nDEMO-003,Routine preflight checks.\n' > new_incidents/DEMO.csv
 
 python -m src.monitor --once --no-api
-# → alerts.csv has 2 rows (critical + critical)
-# → second run with --once produces 0 new
+# -> alerts.csv has 2 rows (critical + critical)
+# -> second run with --once produces 0 new
 ```
 
 ### 3. Live API poll test (requires network)
@@ -264,15 +283,15 @@ print('DASHBOARD OK')
 
 | Key                          | Default                          | Description                 |
 | ---------------------------- | -------------------------------- | --------------------------- |
-| `WATCH_DIR`                | `BASE_DIR / "new_incidents"`   | Drop-in folder              |
-| `ALERT_LOG_PATH`           | `DATA_DIR / "alerts.csv"`      | Alert log                   |
-| `MONITOR_POLL_SECONDS`     | `60`                           | Main loop delay             |
-| `MONITOR_ALERT_SNIPPET`    | `200`                          | Narrative chars stored      |
-| `NTSB_API_URL`             | `.../ntsb/aviation/recent`     | NTSB endpoint               |
-| `NTSB_POLL_SECONDS`        | `3600`                         | NTSB cadence (hourly)       |
-| `UKPN_API_URL`             | `.../ukpn-live-faults/records` | UKPN endpoint               |
-| `UKPN_POLL_SECONDS`        | `60`                           | UKPN cadence (every minute) |
-| `ALERT_HIGH_MIN_CUSTOMERS` | `100`                          | UKPN high-risk threshold    |
+| `WATCH_DIR`                  | `BASE_DIR / "new_incidents"`     | Drop-in folder              |
+| `ALERT_LOG_PATH`             | `DATA_DIR / "alerts.csv"`        | Alert log                   |
+| `MONITOR_POLL_SECONDS`       | `60`                             | Main loop delay             |
+| `MONITOR_ALERT_SNIPPET`      | `200`                            | Narrative chars stored      |
+| `NTSB_API_URL`               | `.../ntsb/aviation/recent`       | NTSB endpoint               |
+| `NTSB_POLL_SECONDS`          | `3600`                           | NTSB cadence (hourly)       |
+| `UKPN_API_URL`               | `.../ukpn-live-faults/records`   | UKPN endpoint               |
+| `UKPN_POLL_SECONDS`          | `60`                             | UKPN cadence (every minute) |
+| `ALERT_HIGH_MIN_CUSTOMERS`   | `100`                            | UKPN high-risk threshold    |
 
 Tune these for your environment (e.g., lower `UKPN_POLL_SECONDS` for faster reaction, raise `ALERT_HIGH_MIN_CUSTOMERS` to reduce noise).
 
@@ -280,16 +299,16 @@ Tune these for your environment (e.g., lower `UKPN_POLL_SECONDS` for faster reac
 
 ## Troubleshooting
 
-| Symptom                                         | Cause                                             | Fix                                                                                           |
-| ----------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `FileNotFoundError: Monitor artifact missing` | Model not trained                                 | Run`python main.py` first.                                                                  |
-| `TLS verification failed`                     | Corporate CA / cert store                         | Monitor uses`data_fetcher._http_get` which falls back to `verify=False` (logged warning). |
-| No alerts from NTSB                             | `probable_cause` is null for recent records     | Normal — only records with cause text are processed.                                         |
-| No alerts from UKPN                             | All recent records are`Planned` or `Restored` | Normal — only`Unplanned` cuts are incidents.                                               |
-| Duplicate alerts after restart                  | State file missing / corrupted                    | Check`data/monitor_state.json` exists and is valid JSON.                                    |
-| `ModuleNotFoundError: config`                 | Running from wrong directory                      | Run from`safety_nlp_pipeline/` root.                                                        |
-| `use_container_width` deprecation warnings    | Streamlit ≥1.37                                  | Harmless; dashboard works.                                                                    |
-| pypdf`CryptographyDeprecationWarning`         | ARC4 deprecation                                  | Harmless; PDF extraction works.                                                               |
+| Symptom                                          | Cause                                             | Fix                                                                                            |
+| ------------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `FileNotFoundError: Monitor artifact missing`    | Model not trained                                 | Run `python main.py` first.                                                                    |
+| `TLS verification failed`                        | Corporate CA / cert store                         | Monitor uses `data_fetcher._http_get` which falls back to `verify=False` (logged warning).     |
+| No alerts from NTSB                              | `probable_cause` is null for recent records       | Normal — only records with cause text are processed.                                           |
+| No alerts from UKPN                              | All recent records are `Planned` or `Restored`    | Normal — only `Unplanned` cuts are incidents.                                                  |
+| Duplicate alerts after restart                   | State file missing / corrupted                    | Check `data/monitor_state.json` exists and is valid JSON.                                      |
+| `ModuleNotFoundError: config`                    | Running from wrong directory                      | Run from `safety_nlp_pipeline/` root.                                                          |
+| `use_container_width` deprecation warnings       | Streamlit >= 1.37                                 | Harmless; dashboard works.                                                                     |
+| pypdf `CryptographyDeprecationWarning`           | ARC4 deprecation                                  | Harmless; PDF extraction works.                                                                |
 
 ---
 
@@ -317,7 +336,7 @@ safety_nlp_pipeline/
 ├── config.py                    # all monitor parameters
 ├── main.py                      # --monitor / --poll flags
 ├── src/monitor.py               # monitoring service (entry point)
-├── app_streamlit.py             # Live Alerts tab (tab 5)
+├── app_streamlit.py             # Legacy Streamlit "Live Alerts" tab (still functional)
 ├── new_incidents/               # drop CSV/TXT here
 │   └── README.txt               # format documentation
 ├── data/
@@ -326,6 +345,13 @@ safety_nlp_pipeline/
 │   ├── real_safety_dataset.csv
 │   ├── safety_model.pkl
 │   └── tfidf_vectorizer.pkl
+
+aviation-safety-app/
+├── backend/
+│   ├── main.py                  # FastAPI endpoints (Live Alerts API)
+│   ├── ml_service.py            # alert loader + builder
+│   └── suggestions.py           # auto-generated safety suggestions
+└── frontend/src/pages/AlertsPage.tsx  # React Live Alerts page
 ```
 
 ---
@@ -336,7 +362,14 @@ safety_nlp_pipeline/
 cd safety_nlp_pipeline
 python main.py                 # trains model (or reuses cache)
 python -m src.monitor --once   # single scan of folder + dataset
-streamlit run app_streamlit.py # open http://localhost:8501 → Live Alerts tab
+
+# Recommended: React + FastAPI dashboard
+cd ../aviation-safety-app && python start.py
+# open http://localhost:5173 -> Live Alerts page
+
+# Alternative: Streamlit dashboard
+streamlit run app_streamlit.py
+# open http://localhost:8501 -> Live Alerts tab
 ```
 
 Drop a file into `new_incidents/` and click **Refresh alerts** to see it appear.

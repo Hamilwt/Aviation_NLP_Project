@@ -22,16 +22,21 @@ Then open `reports/pipeline_report.html` in any browser.
 ### Modern React + FastAPI Dashboard (Recommended)
 ```bash
 cd ../aviation-safety-app
-./dev.sh                  # Linux/macOS
-./dev.ps1                 # Windows PowerShell
-# or
-docker-compose up --build
+# See ../aviation-safety-app/README.md for full setup.
+# Easiest path: use the one-click launcher from the project root:
+cd ..
+python start.py                      # Linux/Mac/Windows (Python 3.11+)
+#   or
+./start_app.sh                       # Linux/Mac
+./start_app.ps1                      # Windows PowerShell
+start_app.bat                        # Windows cmd
 ```
-- **Frontend**: http://localhost:5173 (dev) / http://localhost:80 (Docker)
+- **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
 
-### Legacy Streamlit Dashboard
+### Legacy Streamlit Dashboard (Deprecated)
+> Still functional and supported for offline use, but the React + FastAPI dashboard above is the recommended interface.
 ```bash
 streamlit run app_streamlit.py      # opens http://localhost:8501
 ```
@@ -97,7 +102,7 @@ data/real_safety_dataset.csv   (NASA ASRS + NERC, ~3,700 domain-tagged reports)
       |
 [Web] FASTAPI    REST API wrapping all pipeline functionality
       |
-[Web] REACT      Cross-platform dashboard (Web + Tauri desktop)
+[Web] REACT      Cross-platform dashboard (Web)
       |
 [Mon] MONITOR    Real-time incident monitoring & alerting
 ```
@@ -167,7 +172,7 @@ safety_nlp_pipeline/
 ├── requirements.txt             # Python dependencies
 ├── config.py                    # All parameters (paths, model settings, ...)
 ├── main.py                      # Single entry point - runs the full pipeline
-├── app_streamlit.py             # Legacy Streamlit web dashboard
+├── app_streamlit.py             # Legacy Streamlit web dashboard (deprecated)
 ├── .streamlit/
 │   └── config.toml              # Dashboard theme configuration
 ├── src/
@@ -252,6 +257,7 @@ First run auto-downloads NLTK corpora (stopwords, punkt, wordnet) and fetches li
 
 ## 🔗 Related
 
-- **Modern Dashboard**: `../aviation-safety-app/` — React + FastAPI + Tauri
-- **Full Documentation**: `../PROJECT_OVERVIEW.txt` (475 lines)
+- **Modern Dashboard**: `../aviation-safety-app/` — React + FastAPI
+- **One-click Launcher**: `../start.py`, `../start_app.sh`, `../start_app.ps1`, `../start_app.bat`
+- **Full Documentation**: `../PROJECT_OVERVIEW.txt` (~475 lines)
 - **Legacy TUI**: `../app.py` — Textual terminal interface (preserved)

@@ -163,7 +163,7 @@ aviation-safety-app/
 - Ollama connectivity: green "Connected" / red "Disconnected"
 - Live model count + active model name
 - Backend health indicator
-- App version
+- App version string (hardcoded in `StatusBar.tsx`; kept in sync with the latest release tag)
 
 ## 🛠️ Development
 

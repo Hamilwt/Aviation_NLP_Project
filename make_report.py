@@ -131,8 +131,8 @@ def main():
     s = doc.add_paragraph()
     s.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = s.add_run("Production-grade headless pipeline — NASA ASRS · NERC power grid · "
-                  "TF-IDF · SGD · GridSearchCV · RAG · HTML report · Streamlit dashboard · "
-                  "real-time monitoring & alerting")
+                  "TF-IDF · SGD · GridSearchCV · RAG · HTML report · "
+                  "React + FastAPI web dashboard · real-time monitoring & alerting")
     r.font.size = Pt(12)
     r.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
 
@@ -152,8 +152,10 @@ def main():
         "reports from two public domains - NASA ASRS aviation incident reports and NERC "
         "power-grid event analysis reports - and produces a comprehensive, self-contained "
         "HTML report (model metrics, confusion matrix, RAG evidence, data quality insights). "
-        "A Streamlit web dashboard with a warm, creamy-light theme makes the results "
-        "accessible to stakeholders who are not comfortable with the command line."
+        "A modern React + FastAPI web dashboard (aviation-safety-app/) gives full visual "
+        "control over every pipeline stage, with local Ollama LLM integration and "
+        "auto-generated safety suggestions. A legacy Streamlit dashboard is preserved for "
+        "offline / command-line workflows."
     )
 
     doc.add_heading("1.1 Key features", level=2)
@@ -164,9 +166,13 @@ def main():
         "Live data collection: NASA ASRS reports (Hugging Face datasets-server) + 12 NERC event-analysis PDFs (pypdf + NLTK sentence tokenization), merged into one domain-tagged dataset.",
         "Rich HTML report: Jinja2 template with dataset statistics, data-quality audit, best hyperparameters, per-class metrics table, embedded confusion-matrix + class distribution plots, and RAG evidence examples with similarity bars.",
         "Batch RAG explainability: a sample of the test set is explained with the top-3 most similar historical reports per prediction - an auditable, explainable-by-example system.",
-        "Streamlit web dashboard (creamy light theme): Overview, Model Performance, RAG Explorer (live predictions + evidence), Data Assistant and Live Alerts tabs.",
+        "React + FastAPI web dashboard (aviation-safety-app/, primary): Overview, Model Performance, RAG Explorer, Data Assistant (with optional local Ollama LLM), Live Alerts and System Control pages with real-time pipeline progress.",
+        "Local Ollama LLM integration: domain-constrained chat for the Data Assistant (no API key required), with rule-based pandas analyst as a fallback.",
+        "Auto-generated safety suggestions per alert: NLP keyword extraction in backend/suggestions.py, surfaced in the Live Alerts page.",
+        "One-click launcher scripts (start.py, start_app.bat, start_app.sh, start_app.ps1) to install dependencies and start backend + frontend in one go.",
+        "Legacy Streamlit dashboard (app_streamlit.py) preserved for offline / CLI workflows.",
         "Real-time incident monitoring & alerting (src/monitor.py): ingests new reports as they arrive, classifies on-the-fly, scores risk (critical/high/medium) and raises alerts with RAG evidence - from a watched folder, appended dataset rows, the live NTSB aviation feed and the UK Power Networks live-faults feed.",
-        "Alert de-duplication survives restarts (data/monitor_state.json), and the Live Alerts dashboard tab color-codes critical/high rows and shows RAG evidence per alert.",
+        "Alert de-duplication survives restarts (data/monitor_state.json), and the Live Alerts page color-codes critical/high rows and shows RAG evidence per alert.",
         "Keyless data assistant (no LLM/API key): data-quality issues, class balance, domain split, safety-criticality breakdown and risk-phrase scanning with pandas.",
         "Logging: every step writes to the console and pipeline.log for full traceability.",
     ]:
@@ -190,12 +196,16 @@ def main():
         "        |                     narratives -> top-3 evidence spans)\n"
         "  [6/6] HTML REPORT (Jinja2 self-contained page -> reports/pipeline_report.html)\n"
         "        |\n"
-        "  [Web] STREAMLIT DASHBOARD (app_streamlit.py, creamy light theme)\n"
+        "  [Web] REACT + FASTAPI DASHBOARD (aviation-safety-app/, primary)\n"
+        "        |   6 pages: Overview / Performance / RAG / Assistant / Alerts / System\n"
+        "        |   local Ollama LLM (no API key) + auto-generated safety suggestions\n"
+        "        |\n"
+        "  [Web] LEGACY STREAMLIT DASHBOARD (app_streamlit.py)\n"
         "        |\n"
         "  [MON] REAL-TIME MONITOR & ALERTER (src/monitor.py, python -m src.monitor)\n"
         "        |   watches new_incidents/ + appended dataset rows + live NTSB / UKPN feeds\n"
         "        |   -> classify on-the-fly -> risk score -> alert with RAG evidence\n"
-        "        `-> data/alerts.csv -> Streamlit 'Live Alerts' tab"
+        "        `-> data/alerts.csv -> React Live Alerts page + Streamlit 'Live Alerts' tab"
     )
     add_code_block(doc, arch)
 
@@ -204,16 +214,34 @@ def main():
     doc.add_heading("1.5 How to run", level=2)
     add_code_block(
         doc,
+        "# 0. ONE-CLICK LAUNCHER (recommended) - runs the pipeline if needed, then\n"
+        "#    starts backend + frontend and opens the dashboard in your browser.\n"
+        "python start.py                    # cross-platform Python launcher\n"
+        "./start_app.sh                     # Linux / macOS\n"
+        "./start_app.ps1                    # Windows PowerShell\n"
+        "start_app.bat                      # Windows cmd\n"
+        "\n"
+        "# 1. Core pipeline (generates all artifacts)\n"
         "cd safety_nlp_pipeline\n"
         "pip install -r requirements.txt\n"
         "python main.py                        # full pipeline, one command\n"
         "# open reports/pipeline_report.html in a browser\n\n"
+        "# 2. React + FastAPI web dashboard (PRIMARY INTERFACE)\n"
+        "cd ../aviation-safety-app\n"
+        "cd backend && python -m venv venv && source venv/bin/activate\n"
+        "pip install -r requirements.txt\n"
+        "python -c \"import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab')\"\n"
+        "uvicorn main:app --reload --host 0.0.0.0 --port 8000\n"
+        "# Frontend (separate terminal):\n"
+        "cd ../frontend && npm install && npm run dev\n"
+        "# http://localhost:5173   |   API: http://localhost:8000/docs\n\n"
+        "# 3. Legacy Streamlit dashboard (optional)\n"
         "streamlit run app_streamlit.py        # web dashboard (http://localhost:8501)\n\n"
-        "# real-time monitoring & alerting:\n"
+        "# 4. Real-time monitoring & alerting:\n"
         "python -m src.monitor                 # continuous monitor (needs trained model)\n"
         "python -m src.monitor --once --no-api # single scan, no live feeds\n"
         "python main.py --monitor --poll 30    # train, then start monitoring\n\n"
-        "# optional pipeline flags:\n"
+        "# 5. Optional pipeline flags:\n"
         "python main.py --force-refresh        # re-download data\n"
         "python main.py --no-fetch             # use cached CSV only\n"
         "python main.py --no-rag               # skip RAG explainability\n"
@@ -235,15 +263,23 @@ def main():
     add_code_block(
         doc,
         "Aviation_NLP_Project/\n"
+        "|-- start.py, start_app.bat / .sh / .ps1   one-click launchers (install + run)\n"
         "|-- make_report.py             builds this DOCX report\n"
         "|-- PROJECT_OVERVIEW.txt       full updated project overview\n"
         "|-- app.py, pipeline/          legacy Textual TUI (kept as a developer tool)\n"
+        "|-- aviation-safety-app/        React + FastAPI web dashboard (PRIMARY)\n"
+        "|   |-- backend/               FastAPI (main.py, ml_service.py, config.py,\n"
+        "|   |                          schemas.py, ollama_service.py, suggestions.py)\n"
+        "|   `-- frontend/              React + TypeScript + Vite + Tailwind\n"
+        "|                              pages: Overview / Performance / RAG /\n"
+        "|                                     Assistant / Alerts / System\n"
         "`-- safety_nlp_pipeline/\n"
         "    |-- README.md\n"
         "    |-- requirements.txt\n"
         "    |-- config.py              all parameters (paths, model settings, ...)\n"
         "    |-- main.py                single entry point - runs the full pipeline\n"
-        "    |-- app_streamlit.py       Streamlit web dashboard (creamy light theme)\n"
+        "    |-- MONITOR_GUIDE.md       detailed monitor & alerting documentation\n"
+        "    |-- app_streamlit.py       Legacy Streamlit web dashboard (still functional)\n"
         "    |-- .streamlit/config.toml dashboard theme configuration\n"
         "    |-- src/\n"
         "    |   |-- data_fetcher.py    downloads ASRS (HF) + NERC (PDFs) -> CSV\n"
@@ -278,6 +314,11 @@ def main():
     doc.add_heading("5. Dependencies", level=1)
     add_code_block(
         doc,
+        "The actual dependency lists live with each component:\n"
+        "  - safety_nlp_pipeline/requirements.txt          core NLP pipeline\n"
+        "  - aviation-safety-app/backend/requirements.txt  FastAPI backend\n"
+        "  - aviation-safety-app/frontend/package.json     React + TypeScript dashboard\n\n"
+        "Core Pipeline (safety_nlp_pipeline/):\n"
         "pandas>=2.2         Dataframes for dataset processing & assistant analysis\n"
         "scikit-learn>=1.5   TF-IDF, SGDClassifier, GridSearchCV, cosine similarity\n"
         "datasets>=3.0       Hugging Face datasets-server client (aviation source)\n"
@@ -288,7 +329,22 @@ def main():
         "matplotlib>=3.8     Confusion matrix & class distribution plots\n"
         "seaborn>=0.13       Heatmap rendering\n"
         "jinja2>=3.1         HTML report templates\n"
-        "streamlit>=1.37     Web dashboard (creamy light theme)",
+        "streamlit>=1.37     Legacy Streamlit dashboard (still functional)\n\n"
+        "Backend API (aviation-safety-app/backend/):\n"
+        "fastapi==0.115.0, uvicorn[standard]==0.34.0, pydantic==2.10.6,\n"
+        "pydantic-settings==2.9.0, python-multipart==0.0.9, python-dotenv==1.0.1,\n"
+        "joblib==1.4.2, pandas==2.2.3, numpy==2.1.3, scikit-learn==1.6.1,\n"
+        "scipy==1.14.1, requests==2.32.3, pypdf==5.1.0, nltk==3.9.1,\n"
+        "httpx==0.28.1, websockets==13.1, watchfiles==1.0.5\n\n"
+        "Frontend (aviation-safety-app/frontend/):\n"
+        "react@18.3.1, react-dom@18.3.1, react-router-dom@6.26.2,\n"
+        "axios@1.7.7, recharts@2.12.7, lucide-react@0.441.0,\n"
+        "clsx@2.1.1, tailwind-merge@2.5.2, date-fns@4.1.0,\n"
+        "react-hot-toast@2.4.1, zustand@5.0.0, tailwindcss@3.4.13,\n"
+        "typescript@5.6.2, vite@5.4.8\n\n"
+        "Helper scripts at the repo root:\n"
+        "python-docx>=1.1    make_report.py builds this DOCX\n"
+        "textual>=8.2        app.py - legacy Textual terminal UI (optional)",
     )
 
     doc.add_paragraph()
